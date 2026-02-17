@@ -1,0 +1,92 @@
+2025-09-04 13:31:51,282 INFO:main.py:240:print_splash_screen:PDB2PQR v3.6.1: biomolecular structure conversion software.
+2025-09-04 13:31:51,283 INFO:main.py:242:print_splash_screen:Please cite:  Jurrus E, et al.  Improvements to the APBS biomolecular solvation software suite.  Protein Sci 27 112-128 (2018).
+2025-09-04 13:31:51,283 INFO:main.py:242:print_splash_screen:Please cite:  Dolinsky TJ, et al.  PDB2PQR: expanding and upgrading automated preparation of biomolecular structures for molecular simulations. Nucleic Acids Res 35 W522-W525 (2007).
+2025-09-04 13:31:51,284 INFO:main.py:759:main_driver:Checking and transforming input arguments.
+2025-09-04 13:31:51,288 INFO:main.py:763:main_driver:Loading topology files.
+2025-09-04 13:31:51,319 INFO:main.py:765:main_driver:Loading molecule: 4g5j_cleaned.pdb
+2025-09-04 13:31:51,354 INFO:main.py:770:main_driver:Setting up molecule.
+2025-09-04 13:31:51,361 INFO:main.py:408:setup_molecule:Created biomolecule object with 333 residues and 2497 atoms.
+2025-09-04 13:31:51,362 WARNING:main.py:418:setup_molecule:Multiple occupancies found: N in LYS A 970.
+2025-09-04 13:31:51,362 WARNING:main.py:418:setup_molecule:Multiple occupancies found: CA in LYS A 970.
+2025-09-04 13:31:51,363 WARNING:main.py:418:setup_molecule:Multiple occupancies found: C in LYS A 970.
+2025-09-04 13:31:51,363 WARNING:main.py:418:setup_molecule:Multiple occupancies found: O in LYS A 970.
+2025-09-04 13:31:51,363 WARNING:main.py:418:setup_molecule:Multiple occupancies found: CB in LYS A 970.
+2025-09-04 13:31:51,364 WARNING:main.py:418:setup_molecule:Multiple occupancies found: CG in LYS A 970.
+2025-09-04 13:31:51,364 WARNING:main.py:418:setup_molecule:Multiple occupancies found: CD in LYS A 970.
+2025-09-04 13:31:51,365 WARNING:main.py:418:setup_molecule:Multiple occupancies found: CE in LYS A 970.
+2025-09-04 13:31:51,365 WARNING:main.py:418:setup_molecule:Multiple occupancies found: NZ in LYS A 970.
+2025-09-04 13:31:51,365 WARNING:main.py:424:setup_molecule:Multiple occupancies found in LYS A 970. At least one of the instances is being ignored.
+2025-09-04 13:31:51,365 INFO:main.py:774:main_driver:Setting termini states for biomolecule chains.
+2025-09-04 13:31:51,367 WARNING:biomolecule.py:615:update_bonds:Gap in backbone detected between SER A 720 and THR A 725!
+2025-09-04 13:31:51,368 WARNING:biomolecule.py:615:update_bonds:Gap in backbone detected between GLU A 746 and LYS A 757!
+2025-09-04 13:31:51,369 INFO:main.py:604:non_trivial:Loading forcefield.
+2025-09-04 13:31:51,373 INFO:main.py:608:non_trivial:Loading hydrogen topology definitions.
+2025-09-04 13:31:51,374 WARNING:biomolecule.py:157:num_missing_heavy:Missing atom OXT in residue TYR A 1016
+2025-09-04 13:31:51,375 WARNING:biomolecule.py:157:num_missing_heavy:Missing atom OXT in residue TYR A 1016
+2025-09-04 13:31:51,375 INFO:main.py:618:non_trivial:Attempting to repair 1 missing atoms in biomolecule.
+2025-09-04 13:31:51,376 WARNING:biomolecule.py:157:num_missing_heavy:Missing atom OXT in residue TYR A 1016
+2025-09-04 13:31:51,377 INFO:biomolecule.py:1077:repair_heavy:Added atom OXT to residue TYR A 1016 at coordinates 78.698, 12.545, -27.515
+2025-09-04 13:31:51,377 INFO:main.py:623:non_trivial:Updating disulfide bridges.
+2025-09-04 13:31:51,377 INFO:main.py:626:non_trivial:Debumping biomolecule.
+2025-09-04 13:31:51,409 INFO:main.py:649:non_trivial:Adding hydrogens to biomolecule.
+2025-09-04 13:31:51,507 INFO:main.py:652:non_trivial:Debumping biomolecule (again).
+2025-09-04 13:31:51,638 INFO:main.py:654:non_trivial:Optimizing hydrogen bonds
+2025-09-04 13:31:51,797 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: LP1 in HOH A 1219 skipped when optimizing H2 in HOH A 1208
+2025-09-04 13:31:51,824 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: H2 in HOH A 1215 skipped when optimizing H1 in HOH A 1204
+2025-09-04 13:31:51,826 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: H2 in HOH A 1215 skipped when optimizing H1 in HOH A 1204
+2025-09-04 13:31:51,827 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: H2 in HOH A 1215 skipped when optimizing H1 in HOH A 1204
+2025-09-04 13:31:51,828 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: H2 in HOH A 1215 skipped when optimizing H1 in HOH A 1204
+2025-09-04 13:31:51,829 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: H2 in HOH A 1215 skipped when optimizing H1 in HOH A 1204
+2025-09-04 13:31:51,829 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: H2 in HOH A 1215 skipped when optimizing H1 in HOH A 1204
+2025-09-04 13:31:51,830 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: H2 in HOH A 1215 skipped when optimizing H1 in HOH A 1204
+2025-09-04 13:31:51,831 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: H2 in HOH A 1215 skipped when optimizing H1 in HOH A 1204
+2025-09-04 13:31:51,996 INFO:main.py:666:non_trivial:Applying force field to biomolecule states.
+2025-09-04 13:31:51,999 INFO:main.py:713:non_trivial:Regenerating headers.
+2025-09-04 13:31:52,000 INFO:main.py:738:non_trivial:Regenerating PDB lines.
+2025-09-04 13:31:52,013 WARNING:main.py:311:print_pqr:Ignoring 391 header lines in output.
+2025-09-04 14:31:12,922 INFO:main.py:240:print_splash_screen:PDB2PQR v3.6.1: biomolecular structure conversion software.
+2025-09-04 14:31:12,923 INFO:main.py:242:print_splash_screen:Please cite:  Jurrus E, et al.  Improvements to the APBS biomolecular solvation software suite.  Protein Sci 27 112-128 (2018).
+2025-09-04 14:31:12,924 INFO:main.py:242:print_splash_screen:Please cite:  Dolinsky TJ, et al.  PDB2PQR: expanding and upgrading automated preparation of biomolecular structures for molecular simulations. Nucleic Acids Res 35 W522-W525 (2007).
+2025-09-04 14:31:12,925 INFO:main.py:759:main_driver:Checking and transforming input arguments.
+2025-09-04 14:31:12,930 INFO:main.py:763:main_driver:Loading topology files.
+2025-09-04 14:31:12,966 INFO:main.py:765:main_driver:Loading molecule: 4g5j_cleaned.pdb
+2025-09-04 14:31:13,073 INFO:main.py:770:main_driver:Setting up molecule.
+2025-09-04 14:31:13,083 INFO:main.py:408:setup_molecule:Created biomolecule object with 333 residues and 2497 atoms.
+2025-09-04 14:31:13,084 WARNING:main.py:418:setup_molecule:Multiple occupancies found: N in LYS A 970.
+2025-09-04 14:31:13,089 WARNING:main.py:418:setup_molecule:Multiple occupancies found: CA in LYS A 970.
+2025-09-04 14:31:13,089 WARNING:main.py:418:setup_molecule:Multiple occupancies found: C in LYS A 970.
+2025-09-04 14:31:13,090 WARNING:main.py:418:setup_molecule:Multiple occupancies found: O in LYS A 970.
+2025-09-04 14:31:13,091 WARNING:main.py:418:setup_molecule:Multiple occupancies found: CB in LYS A 970.
+2025-09-04 14:31:13,091 WARNING:main.py:418:setup_molecule:Multiple occupancies found: CG in LYS A 970.
+2025-09-04 14:31:13,092 WARNING:main.py:418:setup_molecule:Multiple occupancies found: CD in LYS A 970.
+2025-09-04 14:31:13,092 WARNING:main.py:418:setup_molecule:Multiple occupancies found: CE in LYS A 970.
+2025-09-04 14:31:13,093 WARNING:main.py:418:setup_molecule:Multiple occupancies found: NZ in LYS A 970.
+2025-09-04 14:31:13,094 WARNING:main.py:424:setup_molecule:Multiple occupancies found in LYS A 970. At least one of the instances is being ignored.
+2025-09-04 14:31:13,095 INFO:main.py:774:main_driver:Setting termini states for biomolecule chains.
+2025-09-04 14:31:13,098 WARNING:biomolecule.py:615:update_bonds:Gap in backbone detected between SER A 720 and THR A 725!
+2025-09-04 14:31:13,099 WARNING:biomolecule.py:615:update_bonds:Gap in backbone detected between GLU A 746 and LYS A 757!
+2025-09-04 14:31:13,100 INFO:main.py:604:non_trivial:Loading forcefield.
+2025-09-04 14:31:13,115 INFO:main.py:608:non_trivial:Loading hydrogen topology definitions.
+2025-09-04 14:31:13,118 WARNING:biomolecule.py:157:num_missing_heavy:Missing atom OXT in residue TYR A 1016
+2025-09-04 14:31:13,119 WARNING:biomolecule.py:157:num_missing_heavy:Missing atom OXT in residue TYR A 1016
+2025-09-04 14:31:13,119 INFO:main.py:618:non_trivial:Attempting to repair 1 missing atoms in biomolecule.
+2025-09-04 14:31:13,123 WARNING:biomolecule.py:157:num_missing_heavy:Missing atom OXT in residue TYR A 1016
+2025-09-04 14:31:13,125 INFO:biomolecule.py:1077:repair_heavy:Added atom OXT to residue TYR A 1016 at coordinates 78.698, 12.545, -27.515
+2025-09-04 14:31:13,126 INFO:main.py:623:non_trivial:Updating disulfide bridges.
+2025-09-04 14:31:13,129 INFO:main.py:626:non_trivial:Debumping biomolecule.
+2025-09-04 14:31:13,168 INFO:main.py:649:non_trivial:Adding hydrogens to biomolecule.
+2025-09-04 14:31:13,284 INFO:main.py:652:non_trivial:Debumping biomolecule (again).
+2025-09-04 14:31:13,445 INFO:main.py:654:non_trivial:Optimizing hydrogen bonds
+2025-09-04 14:31:13,685 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: LP1 in HOH A 1219 skipped when optimizing H2 in HOH A 1208
+2025-09-04 14:31:13,719 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: H2 in HOH A 1215 skipped when optimizing H1 in HOH A 1204
+2025-09-04 14:31:13,721 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: H2 in HOH A 1215 skipped when optimizing H1 in HOH A 1204
+2025-09-04 14:31:13,723 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: H2 in HOH A 1215 skipped when optimizing H1 in HOH A 1204
+2025-09-04 14:31:13,724 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: H2 in HOH A 1215 skipped when optimizing H1 in HOH A 1204
+2025-09-04 14:31:13,725 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: H2 in HOH A 1215 skipped when optimizing H1 in HOH A 1204
+2025-09-04 14:31:13,727 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: H2 in HOH A 1215 skipped when optimizing H1 in HOH A 1204
+2025-09-04 14:31:13,729 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: H2 in HOH A 1215 skipped when optimizing H1 in HOH A 1204
+2025-09-04 14:31:13,730 WARNING:debump.py:354:get_closest_atom:Skipped atom during water optimization: H2 in HOH A 1215 skipped when optimizing H1 in HOH A 1204
+2025-09-04 14:31:13,934 INFO:main.py:666:non_trivial:Applying force field to biomolecule states.
+2025-09-04 14:31:13,936 INFO:main.py:713:non_trivial:Regenerating headers.
+2025-09-04 14:31:13,938 INFO:main.py:738:non_trivial:Regenerating PDB lines.
+2025-09-04 14:31:13,979 WARNING:main.py:311:print_pqr:Ignoring 393 header lines in output.

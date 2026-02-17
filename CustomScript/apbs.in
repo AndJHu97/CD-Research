@@ -1,0 +1,27 @@
+
+read:
+  - mol:
+      format: pqr
+      file: protein.pqr
+
+elec:
+  - mg-auto:
+      dime: [65, 65, 65]
+      cglen: [40.0, 40.0, 40.0]
+      fglen: [40.0, 40.0, 40.0]
+      cgcent: mol 1
+      fgcent: mol 1
+      lpbe: true
+      bcfl: sdh
+      pdie: 2.0
+      sdie: 78.54
+      srfm: smol
+      chgm: spl2
+      sdens: 10.0
+      srad: 1.4
+      swin: 0.3
+      temp: 298.15
+      calcenergy: total
+      calcforce: no
+      write:
+        pot: dx protein
