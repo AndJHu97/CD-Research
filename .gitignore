@@ -1,0 +1,31 @@
+# Large external packages
+rosetta.source.release-371/
+xtb-6.5.1/
+psipred/
+
+# Python virtual environment
+myenv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Temporary files
+*.xyz
+*.mol
+*restart
+xtbtopo.mol
+*.sh
+*.sh.*
+
+# Output directories
+*_output/
+
+# Large data files
+*.pka
+*.pqr
+*.pse
+*.rsa
+*.sdf
+Miniconda3-*
