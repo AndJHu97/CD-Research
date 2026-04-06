@@ -47,13 +47,56 @@ def estimate_electrophile_sasa(smiles):
     return sasa
 
 def run_freesasa(pdb_path):
-    rsa_file = os.path.splitext(pdb_path)[0] + "_sasa.rsa"
+    """Run FreeSASA and save output to organized directory."""
+    # Create sasa_output directory in the same location as the PDB file
+    pdb_dir = os.path.dirname(os.path.abspath(pdb_path))
+    sasa_output_dir = os.path.join(pdb_dir, "sasa_output")
+    os.makedirs(sasa_output_dir, exist_ok=True)
+    
+    # Save .rsa file in the sasa_output directory
+    pdb_basename = os.path.basename(pdb_path)
+    rsa_file = os.path.join(sasa_output_dir, os.path.splitext(pdb_basename)[0] + "_sasa.rsa")
     subprocess.run(["freesasa", pdb_path, "--format=rsa", f"--output={rsa_file}"], check=True)
     return rsa_file
 
 def run_propka(pdb_path):
+    """Run PROPKA and move output to organized directory."""
+    # Create pka_output directory in the same location as the PDB file
+    pdb_dir = os.path.dirname(os.path.abspath(pdb_path))
+    pka_output_dir = os.path.join(pdb_dir, "pka_output")
+    os.makedirs(pka_output_dir, exist_ok=True)
+    
+    # PROPKA creates output in current working directory by default
+    # We need to run it and then move the file to our organized directory
+    pdb_basename = os.path.basename(pdb_path)
+    pdb_base_no_ext = os.path.splitext(pdb_basename)[0]
+    
+    # Run PROPKA (it will create .pka file in current directory or PDB directory)
     subprocess.run(["propka3", pdb_path], check=True)
-    return os.path.splitext(pdb_path)[0] + ".pka"
+    
+    # Look for the .pka file in multiple possible locations
+    possible_pka_locations = [
+        os.path.join(os.getcwd(), f"{pdb_base_no_ext}.pka"),  # Current directory
+        os.path.join(pdb_dir, f"{pdb_base_no_ext}.pka"),      # PDB directory
+        os.path.splitext(pdb_path)[0] + ".pka"                 # Next to PDB file
+    ]
+    
+    pka_file_source = None
+    for loc in possible_pka_locations:
+        if os.path.exists(loc):
+            pka_file_source = loc
+            break
+    
+    if pka_file_source is None:
+        raise FileNotFoundError(f"PROPKA output file not found. Checked: {possible_pka_locations}")
+    
+    # Move to organized directory
+    pka_file_dest = os.path.join(pka_output_dir, f"{pdb_base_no_ext}.pka")
+    if os.path.abspath(pka_file_source) != os.path.abspath(pka_file_dest):
+        import shutil
+        shutil.move(pka_file_source, pka_file_dest)
+    
+    return pka_file_dest
 
 def parse_rsa_file(rsa_file):
     exposure = {}

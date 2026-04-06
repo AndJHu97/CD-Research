@@ -1,0 +1,43 @@
+##############################################################################################################
+#
+# Rosetta crash log. Please submit the contents of this file to http://crash.rosettacommons.org/
+# or use the script Rosetta/main/source/scripts/python/public/report_crashes.py
+#
+
+[START_CRASH_REPORT]
+[ROSETTA_VERSION]: 2024.09+release.06b3cf8
+[COMMIT_DATE]: 2024-03-07T14:59:22.624665
+[APPLICATION]: UNKNOWN APPLICATION
+[MODE]: Release
+[EXTRAS]: default
+[OS]: GNU/Linux
+[COMPILER]: GCC version "13.3.0"
+[STDLIB]: libstdc++ version 20240904
+[START_OPTIONS]
+NO OPTIONS SPECIFIED
+
+[END_OPTIONS]
+
+[START_BACKTRACE]: RAW_LIBC
+/mnt/c/Users/Andre/Research/Kimmel/Rosetta/rosetta.source.release-371/main/source/build/src/release/linux/6.6/64/x86/gcc/13/default/libutility.so(backtrace_string[abi:cxx11](int)+0x5b) [0x767e840b721b]
+/mnt/c/Users/Andre/Research/Kimmel/Rosetta/rosetta.source.release-371/main/source/build/src/release/linux/6.6/64/x86/gcc/13/default/libutility.so(utility::excn::Exception::Exception(char const*, int, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)+0xd1) [0x767e840fab01]
+/mnt/c/Users/Andre/Research/Kimmel/Rosetta/rosetta.source.release-371/main/source/build/src/release/linux/6.6/64/x86/gcc/13/default/libutility.so(+0x19f264) [0x767e840ab264]
+/mnt/c/Users/Andre/Research/Kimmel/Rosetta/rosetta.source.release-371/main/source/build/src/release/linux/6.6/64/x86/gcc/13/default/libutility.so(+0x19f6d6) [0x767e840ab6d6]
+/mnt/c/Users/Andre/Research/Kimmel/Rosetta/rosetta.source.release-371/main/source/build/src/release/linux/6.6/64/x86/gcc/13/default/libutility.so(utility::options::OptionCollection::load(int, char* const*, bool)+0x1ee) [0x767e84217cfe]
+/mnt/c/Users/Andre/Research/Kimmel/Rosetta/rosetta.source.release-371/main/source/build/src/release/linux/6.6/64/x86/gcc/13/default/libcore.6.so(core::init::init_options(int, char**)+0x23) [0x767e7f581e73]
+/mnt/c/Users/Andre/Research/Kimmel/Rosetta/rosetta.source.release-371/main/source/build/src/release/linux/6.6/64/x86/gcc/13/default/libcore.6.so(core::init::init(int, char**)+0x2b) [0x767e7f586deb]
+/mnt/c/Users/Andre/Research/Kimmel/Rosetta/rosetta.source.release-371/main/source/bin/rosetta_scripts.linuxgccrelease(+0x46e6) [0x5b49b134e6e6]
+/lib/x86_64-linux-gnu/libc.so.6(+0x2a1ca) [0x767e8382a1ca]
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x8b) [0x767e8382a28b]
+/mnt/c/Users/Andre/Research/Kimmel/Rosetta/rosetta.source.release-371/main/source/bin/rosetta_scripts.linuxgccrelease(+0x4de5) [0x5b49b134ede5]
+
+[END_BACKTRACE]
+
+[FILE]: src/utility/options/OptionCollection.cc
+[LINE]: 572
+[START_MESSAGE]
+Option file open failed for: 'options.txt'
+
+[END_MESSAGE]
+[END_CRASH_REPORT]
+

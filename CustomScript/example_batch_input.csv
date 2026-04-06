@@ -1,0 +1,3 @@
+name,protein pdb,electrophile smiles,top n types
+afatinib_test,../Existing_Structures/4g5j_cleaned.pka,C=CC(=O)Nc1cc(F)cc(Cl)c1,3
+carfilzomib_test,../Existing_Structures/4R67.pdb,CC(C)C[C@H](NC(=O)[C@H](CC(C)C)NC(=O)CN)C(=O)N[C@@H](Cc1ccccc1)C(=O)N[C@@H](CC(C)C)C(=O)[C@]1(C)CO1,5

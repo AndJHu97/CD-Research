@@ -1,0 +1,62 @@
+{
+  "Cys|protonated": {
+    "homo": -10.0652,
+    "smiles": "CS",
+    "charge": 0
+  },
+  "Cys|deprotonated": {
+    "homo": -7.5115,
+    "smiles": "C[S-]",
+    "charge": -1
+  },
+  "Ser|protonated": {
+    "homo": -11.2847,
+    "smiles": "CO",
+    "charge": 0
+  },
+  "Ser|deprotonated": {
+    "homo": -8.2829,
+    "smiles": "C[O-]",
+    "charge": -1
+  },
+  "Thr|protonated": {
+    "homo": -11.1969,
+    "smiles": "CCO",
+    "charge": 0
+  },
+  "Thr|deprotonated": {
+    "homo": -8.0744,
+    "smiles": "CC[O-]",
+    "charge": -1
+  },
+  "Tyr|protonated": {
+    "homo": -10.4089,
+    "smiles": "c1ccc(O)cc1",
+    "charge": 0
+  },
+  "Tyr|deprotonated": {
+    "homo": -8.4366,
+    "smiles": "c1ccc([O-])cc1",
+    "charge": -1
+  },
+  "Lys|protonated": {
+    "homo": -7.6323,
+    "smiles": "C[NH3+]",
+    "charge": 0
+  },
+  "Lys|deprotonated": {
+    "homo": -9.9749,
+    "smiles": "NCC",
+    "charge": 0
+  },
+  "His|protonated": {
+    "homo": -10.3021,
+    "smiles": "c1c[nH]cn1",
+    "charge": 0
+  },
+  "His|deprotonated": {
+    "homo": -8.4443,
+    "smiles": "c1cn[n-]c1",
+    "charge": -1
+  }
+}

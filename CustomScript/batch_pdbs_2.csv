@@ -1,0 +1,14 @@
+name,protein pdb,electrophile_smiles,LigID,top n types,Residue,ResNum,Chain
+1euv-aldehyde,1euv,Cc1onc(-c2ccccc2Cl)c1C(=O)Oc1ccc(C=O)cc1,,3,Cys,328,A
+4DCD-GC373,4DCD,CC(C)C[C@H](NC(=O)OCC1=CC=CC=C1)C(=O)N[C@@H](CC1CCNC1=O)C=O,,3,Cys,147,A
+5C1Y-GHY,5C1Y,O=C(N[C@@H](Cc1ccccc1)C(=O)N[C@@H](C=O)C[C@@H]1CCNC1=O)OC(C)C,,3,Cys,147,A
+5C1X-GHX,5C1X,O=C[C@@H](C[C@@H]1CCNC1=O)NC(=O)[C@@H](Cc2ccccc2)NC(=O)OCc3ccccc3,,3,Cys,147,A
+5DGJ-V64,5DGJ,CC(C)(C)OC(=O)N[C@H]1CCc2oc(CCCCNC(=O)CC[C@@H](C=O)NC(=O)[C@@H](NC1=O)CC3CCCCC3)nn2,,3,Cys,139,A
+5TG2-V69,5TG2,CCCCCC1CCCCCNC(CCC(NC(C(NC(O1)=O)CC(C)C)=O)C=O)=O,,3,Cys,139,A
+1BGO-I10,1BGO,CC(C)C[C@@H](C(=O)NCC(=O)CNS(=O)(=O)c1ccccn1)c1cccc(-c2ccccc2)c1,,3,Cys,25,A
+2BDL-4PR,2BDL,CCCC[C@H](NC(=O)O[C@@H]1CN(C(=O)Nc2c(C)noc2C)CC1(C)C)C(=O)C(=O)N[C@H](C)c1ccccc1,,3,Cys,25,A
+2R9F-K2Z,2R9F,CC[C@H](NC(=O)[C@H](CC(C)C)NC(=O)OCc1ccccc1)C(=O)C(=O)NCCCN1CCN(C)CC1,,3,Cys,115,A
+3H0E-H0E,3H0E,CC1(C)CN=C2C(=O)c3cc(S(=O)(=O)N4CCC[C@H]4COc4ccccc4)ccc3N2C1,,3,Cys,163,A
+2FT2-C28,2FT2,N#CC1(NC(=O)[C@H](CS(=O)(=O)N2CCOCC2)N[C@@H](c2ccc(F)cc2)C(F)(F)F)CC1,,3,Cys,25,A
+4BSQ-QQV,4BSQ,N#Cc1nn(-c2cccc(C(F)(F)F)c2)c(=O)n(CCCN2CCCCC2)c1=O,,3,Cys,147,A
+4PIS-3FU,4PIS,COc1ccc(C(=O)NCc2ccnc(C#N)n2)cc1C(=O)C(C)(C)c1cc(Cl)cc(Cl)c1,,3,Cys,122,A

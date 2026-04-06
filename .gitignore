@@ -1,7 +1,12 @@
+.env
+.env.local
+*.env
+
 # Large external packages
 rosetta.source.release-371/
 xtb-6.5.1/
 psipred/
+Existing_Structures/
 
 # Python virtual environment
 myenv/
@@ -29,3 +34,21 @@ xtbtopo.mol
 *.rsa
 *.sdf
 Miniconda3-*
+
+# Large archive / generated outputs from analysis runs
+rosetta_src_3.14_bundle.tar.bz2
+CustomScript/wrapper/
+CustomScript/result_run_2/
+CustomScript/results_run_1/
+CustomScript/results_fix_check/
+CustomScript/results_target_site_check/
+CustomScript/results_target_site_check_2/
+CustomScript/test_results/
+CustomScript/batch_filtering_statistics*.csv
+CustomScript/batch_filtering_statistics*.json
+*.out.csv
+*.log
+*.tmp
+summary.json
+reactivity_cache.json
+nucleophile_cache.json

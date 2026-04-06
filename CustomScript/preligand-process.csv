@@ -1,0 +1,208 @@
+﻿Name,LigID,warhead_type,notes
+MNO,MNO,Aldehyde,
+P10,P10,Aldehyde,
+C4P,C4P,Aldehyde,
+TCO,TCO,Aldehyde,
+NA3,NA3,Aldehyde,
+NA4,NA4,Aldehyde,
+4QB,4QB,Aldehyde,
+HQC,HQC,Aldehyde,
+YBH,YBH,Aldehyde,
+CT1,CT1,Aldehyde,
+CT2,CT2,Aldehyde,
+0M6,0M6,Aldehyde,
+NOL,NOL,Aldehyde,
+TF5,TF5,Aldehyde,
+I0Y,I0Y,Aldehyde,
+O64,O64,Aldehyde,
+S89,S89,Aldehyde,
+K36,K36,Aldehyde,
+3BL,3BL,Aldehyde,
+GHV,GHV,Aldehyde,
+GHX,GHX,Aldehyde,
+GHY,GHY,Aldehyde,
+V64,V64,Aldehyde,
+V69,V69,Aldehyde,
+PCM,PCM,Ketone,
+INP,INP,Ketone,
+I10,I10,Ketone,
+2CA,2CA,Ketone,
+PZN,PZN,Ketone,
+FSP,FSP,Ketone,
+3FC,3FC,Ketone,
+4PR,4PR,Ketone,
+K2Z,K2Z,Ketone,
+34H,34H,Ketone,
+H0E,H0E,Ketone,
+1VL,1VL,Ketone,
+BLN,BLN,Nitrile,
+IHE,IHE,Nitrile,
+IHI,IHI,Nitrile,
+NBL,NBL,Nitrile,
+NOQ,NOQ,Nitrile,
+CRJ,CRJ,Nitrile,
+CRV,CRV,Nitrile,
+C71,C71,Nitrile,
+C28,C28,Nitrile,
+CKE,CKE,Nitrile,
+424,424,Nitrile,
+DJT,DJT,Nitrile,
+XU5,XU5,Nitrile,
+YJ2,YJ2,Nitrile,
+YJ8,YJ8,Nitrile,
+YJ9,YJ9,Nitrile,
+NOW,NOW,Nitrile,
+BD3,BD3,Nitrile,
+QL2,QL2,Nitrile,
+ORG,ORG,Nitrile,
+ORH,ORH,Nitrile,
+KWZ,KWZ,Nitrile,
+935,935,Nitrile,
+EF3,EF3,Nitrile,
+O75,O75,Nitrile,
+OFH,OFH,Nitrile,
+8PW,8PW,Nitrile,
+MG2,MG2,Nitrile,
+JG7,JG7,Nitrile,
+QQV,QQV,Nitrile,
+6AO,6AO,Nitrile,
+GDI,GDI,Nitrile,
+U6B,U6B,Nitrile,
+W2C,W2C,Nitrile,
+0LB,0LB,Nitrile,
+0LC,0LC,Nitrile,
+2EW,2EW,Nitrile,
+2EV,2EV,Nitrile,
+3FS,3FS,Nitrile,
+3FU,3FU,Nitrile,
+3VF,3VF,Nitrile,
+3VJ,3VJ,Nitrile,
+3Y2,3Y2,Nitrile,
+5T9,5T9,Nitrile,
+7KH,7KH,Nitrile,
+GH4,GH4,Nitrile,
+7AS,7AS,Nitrile,
+TP2,TP2,Disulfide,
+221,221,Disulfide,
+20G,20G,Disulfide,
+20H,20H,Disulfide,
+DCD,DCD,Disulfide,
+VSC,VSC,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+VS1,VS1,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+VS2,VS2,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+VS3,VS3,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+VS4,VS4,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+MYP,MYP,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+0D6,0D6,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+C1P,C1P,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+CY6,CY6,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+9IN,9IN,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+5H,5H,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+5X,5X,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+5EE,5EE,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+BCQ,BCQ,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+MQQ,MQQ,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+ELI,ELI,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+RBS,RBS,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+ZU5,ZU5,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+PSY,PSY,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+PVS,PVS,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+HMY,HMY,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+25B,25B,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+PX5,PX5,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+VSP,VSP,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+I3E,I3E,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+I1E,I1E,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+IAQ,IAQ,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+PQR,PQR,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+W2P,W2P,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+G74,G74,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+G86,G86,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+0JH,0JH,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+K85,K85,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+1FM,1FM,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+13L,13L,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+13J,13J,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+1C9,1C9,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+21C,21C,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+21F,21F,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+21J,21J,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+21K,21K,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+21M,21M,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+21R,21R,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+21S,21S,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+22C,22C,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+NQS,NQS,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+REV,REV,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+7NP,7NP,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+37Q,37Q,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+L7S,L7S,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+K76,K76,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+40M,40M,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+4C9,4C9,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+781,781,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+CQ6,CQ6,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+CQ3,CQ3,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+4YU,4YU,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+58E,58E,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+5E8,5E8,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+5E9,5E9,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+5EC,5EC,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+5ED,5ED,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+5EX,5EX,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+5F2,5F2,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+5UT,5UT,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+6OY,6OY,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+XXT,XXT,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+80U,80U,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+633,633,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+630,630,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+634,634,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+63A,63A,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+E62,E62,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+NZN,NZN,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+6H3,6H3,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+N42,N42,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+6HJ,6HJ,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+T92,T92,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+6L4,6L4,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+6TT,6TT,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+79S,79S,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+9O5,9O5,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+9O2,9O2,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+8E8,8E8,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+7G8,7G8,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+7GB,7GB,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+7H4,7H4,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+7KU,7KU,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+7KV,7KV,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+7KX,7KX,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+8BP,8BP,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+8BS,8BS,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+8YD,8YD,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+8ZD,8ZD,Michael acceptor,"Conjugate 1,4-addition at beta-carbon of an alpha,beta-unsaturated electrophile (possible Cys targeting)"
+ZYA,ZYA,Nucleophilic substitution warhead,Leaving-group displacement at electrophilic center (SN2/SNAr depending subclass).
+0I5,0I5,Nucleophilic substitution warhead,Leaving-group displacement at electrophilic center (SN2/SNAr depending subclass).
+0E6,0E6,Nucleophilic substitution warhead,Leaving-group displacement at electrophilic center (SN2/SNAr depending subclass).
+ZRA,ZRA,Nucleophilic substitution warhead,Leaving-group displacement at electrophilic center (SN2/SNAr depending subclass).
+BFB,BFB,Nucleophilic substitution warhead,Leaving-group displacement at electrophilic center (SN2/SNAr depending subclass).
+H7J,H7J,Nucleophilic substitution warhead,Leaving-group displacement at electrophilic center (SN2/SNAr depending subclass).
+TQ8,TQ8,Nucleophilic substitution warhead,Leaving-group displacement at electrophilic center (SN2/SNAr depending subclass).
+XVE,XVE,Nucleophilic substitution warhead,Leaving-group displacement at electrophilic center (SN2/SNAr depending subclass).
+GW9,GW9,Nucleophilic substitution warhead,Leaving-group displacement at electrophilic center (SN2/SNAr depending subclass).
+YFF,YFF,Nucleophilic substitution warhead,Leaving-group displacement at electrophilic center (SN2/SNAr depending subclass).
+HM3,HM3,Nucleophilic substitution warhead,Leaving-group displacement at electrophilic center (SN2/SNAr depending subclass).
+2F3,2F3,Nucleophilic substitution warhead,Leaving-group displacement at electrophilic center (SN2/SNAr depending subclass).
+PYD,PYD,Nucleophilic substitution warhead,Leaving-group displacement at electrophilic center (SN2/SNAr depending subclass).
+5KW,5KW,Nucleophilic substitution warhead,Leaving-group displacement at electrophilic center (SN2/SNAr depending subclass).
+6P8,6P8,Nucleophilic substitution warhead,Leaving-group displacement at electrophilic center (SN2/SNAr depending subclass).
+7O3,7O3,Nucleophilic substitution warhead,Leaving-group displacement at electrophilic center (SN2/SNAr depending subclass).
+8FQ,8FQ,Nucleophilic substitution warhead,Leaving-group displacement at electrophilic center (SN2/SNAr depending subclass).
+8YA,8YA,Aziridine,This warhead is supposed to be ring opening during covalent reaction
+C48,C48,Epoxide,This warhead is supposed to be ring opening during covalent reaction
+R99,R99,Epoxide,This warhead is supposed to be ring opening during covalent reaction
+RL2,RL2,Epoxide,This warhead is supposed to be ring opening during covalent reaction
+M60,M60,Epoxide,This warhead is supposed to be ring opening during covalent reaction
+77B,77B,Epoxide,This warhead is supposed to be ring opening during covalent reaction
+WR1,WR1,Epoxide,This warhead is supposed to be ring opening during covalent reaction
+E6D,E6D,Epoxide,This warhead is supposed to be ring opening during covalent reaction
