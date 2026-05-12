@@ -126,6 +126,8 @@ ELECTROPHILE_WARHEADS = [
     # Michael acceptors
     ("Alpha-beta unsaturated carbonyl (Michael acceptor)", "[CX3](=O)[CX3]=[CX3]", 3, "soft"),  # β-carbon (index 3 in SMARTS match = C(=O)-C=C pattern where β is last)
     ("Acrylamide warhead", "C=CC(=O)N", 0, "soft"),  # β-carbon of C=CC
+    ("Propiolamide warhead", "C#CC(=O)N", 0, "soft"),  # β-carbon of C#CC (alkynyl amide Michael acceptor)
+    ("Ketoamide (Michael acceptor)", "[NX3][CX3](=O)[CX3]=[CX3]", 2, "soft"),  # β-carbon in amide-conjugated Michael acceptor
     ("Vinyl sulfone", "C=C[SX4](=O)(=O)[#6]", 0, "soft"),        # carbon on both sides
     ("Vinyl sulfonate ester", "C=C[SX4](=O)(=O)O[#6]", 0, "soft"),  # sulfur bonded to alkoxy leaving group
     ("Vinylsulfonamide", "C=C[SX4](=O)(=O)[NX3]", 0, "soft"),    # nitrogen on sulfonyl
@@ -162,6 +164,7 @@ ELECTROPHILE_WARHEADS = [
     ("Alkyl halide (good LG)", "[CX4][Br,I]", 0, "soft"),  # carbon attached to halogen
     ("Alkyl chloride", "[CX4]Cl", 0, "borderline"),             # carbon attached to Cl
     ("Nitro-activated aryl halide (SNAr)", "[c]1[c]([N+](=O)[O-])[c][c][c]([F,Cl,Br,I])[c]1", 7, "soft"),  # aryl carbon bearing halide is the SNAr attack site
+    ("Heteroaryl halide (SNAr)", "[c]1[c]([F,Cl,Br,I])[c,n][c,n][c,n][c,n]1", 1, "soft"),  # heteroaryl halide (pyridine-like, quinoline-like); attack at halide-bearing carbon
 
     # Sulfonyl-based
     ("Sulfonyl fluoride", "S(=O)(=O)F", 0, "borderline"),      # sulfur
@@ -185,6 +188,7 @@ ELECTROPHILE_WARHEADS = [
     #("Imine (Schiff base former)", "[CX3]=[NX2]", 0, "hard"),           # imine carbon
     #("Cyclic imine", "[CX3R]=[NX2R]", 0, "hard"),                       # ring-constrained imine
     #("Aldehyde-derived imine", "[CX3H1]=[NX2]", 0, "hard"),             # more reactive imine
+    ("Haloacetamidine", "[CX3](=[NX2])[CH2][F,Cl,Br,I]", 2, "soft"),  # PAD-style halogenated iminoethyl warhead; attack at the halo-methylene carbon
     ("Cyanamide", "N[C]#N", 1, "soft"),                                  # nitrile carbon (Cys targeted). This is the only one strong enough to consider
     #("Alpha-beta unsaturated imine", "[CX3]=[CX3][CX3]=[NX2]", 0, "soft"), # vinylogous imine
     ("Aliphatic imine (Schiff base former)", "[CX3H1]=[NX2H1]", 0, "hard"),  # Lys targeting
