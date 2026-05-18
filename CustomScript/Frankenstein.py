@@ -28,6 +28,7 @@ import pandas as pd
 from rdkit import Chem
 import urllib.request
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import subprocess
 
 # Add paths to import existing scripts
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1320,6 +1321,77 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
     
     all_results = []  # Collect all results across warheads
     filter_statistics = {}  # Track filtering statistics for each warhead
+
+    def run_deprotonation_analysis(input_csv, pdb_source_path, output_dir, label):
+        """Run the deprotonation model on a CSV and report the generated file, if any."""
+        deprot_dir = os.path.join(script_dir, "DeprotonationScoring")
+        deprot_script = os.path.join(deprot_dir, "Deprotonation_Model.py")
+        deprot_model = os.path.join(deprot_dir, "deprot_xgb.pkl")
+        expected_output_csv = os.path.join(
+            output_dir,
+            f"{os.path.splitext(os.path.basename(input_csv))[0]}_deprot_predictions.csv"
+        )
+        if not os.path.exists(deprot_script):
+            print(f"      ⚠️  Deprotonation script not found: {deprot_script}")
+            return None, "failed"
+
+        try:
+            print(f"      🔬 Running deprotonation analyzer on ({label}): {input_csv}")
+            before_files = set(os.listdir(output_dir)) if os.path.exists(output_dir) else set()
+            cmd = [
+                sys.executable,
+                deprot_script,
+                deprot_model,
+                pdb_source_path,
+                "--analyze",
+                input_csv,
+                "--out-dir",
+                output_dir,
+            ]
+            proc = subprocess.run(cmd, cwd=script_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            print(f"      Deprotonation analyzer exit code: {proc.returncode}")
+            if proc.stdout:
+                print("      Deprot stdout:\n" + proc.stdout)
+            if proc.stderr:
+                print("      Deprot stderr:\n" + proc.stderr)
+
+            if os.path.exists(expected_output_csv):
+                try:
+                    df_model = pd.read_csv(expected_output_csv)
+                    if 'Binary_Score_Deprotonated_With_Deprot_Score' in df_model.columns:
+                        count = int(df_model['Binary_Score_Deprotonated_With_Deprot_Score'].astype(int).sum())
+                        print(f"      🔎 Found deprotonation results in: {os.path.basename(expected_output_csv)} (passed: {count})")
+                        return count, "ok"
+                except Exception as exc:
+                    print(f"      ⚠️  Could not read expected deprotonation output {expected_output_csv}: {exc}")
+
+            after_files = set(os.listdir(output_dir)) if os.path.exists(output_dir) else set()
+            new_files = [f for f in (after_files - before_files) if f.lower().endswith('.csv')]
+            for nf in new_files:
+                nf_path = os.path.join(output_dir, nf)
+                try:
+                    df_model = pd.read_csv(nf_path)
+                except Exception:
+                    continue
+                if 'Binary_Score_Deprotonated_With_Deprot_Score' in df_model.columns:
+                    count = int(df_model['Binary_Score_Deprotonated_With_Deprot_Score'].astype(int).sum())
+                    print(f"      🔎 Found deprotonation results in: {nf} (passed: {count})")
+                    return count, "ok"
+
+            try:
+                df_model = pd.read_csv(input_csv)
+                if 'Binary_Score_Deprotonated_With_Deprot_Score' in df_model.columns:
+                    count = int(df_model['Binary_Score_Deprotonated_With_Deprot_Score'].astype(int).sum())
+                    print(f"      🔎 Found deprotonation column in original file: {input_csv} (passed: {count})")
+                    return count, "ok"
+            except Exception:
+                pass
+
+            print("      ⚠️  Deprotonation analyzer did not produce an expected CSV with deprotonation scores.")
+            return None, "failed"
+        except Exception as e:
+            print(f"      ❌ Error running deprotonation analyzer: {e}")
+            return None, "failed"
     
     for warhead_name, warhead_data in all_warhead_results.items():
         print(f"\n   Processing warhead: {warhead_name}")
@@ -1522,13 +1594,17 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
         # Create separate dataframes for protonated and deprotonated
         warhead_safe_name = warhead_name.replace(" ", "_").replace("(", "").replace(")", "")
         
-        # Protonated version - filter to only top N protonated types
-        df_protonated = filtered_nucleophiles[filtered_nucleophiles["Residue"].isin(top_types_protonated)].copy()
+        # Protonated version - KEEP ALL residues, but add binary_reactive column for top N types
+        df_protonated = filtered_nucleophiles.copy()
         df_protonated["Reactivity_Score"] = df_protonated["Reactivity_Score_Protonated"]
         df_protonated["Binary_Reactivity"] = df_protonated["Binary_Reactivity_Protonated"]
         df_protonated["Binary_Orbital"] = df_protonated["Binary_Orbital_Protonated"]
         df_protonated["Binary_Score"] = df_protonated["Binary_Score_Protonated"]
         df_protonated["Binary_Score_With_HSAB"] = df_protonated["Binary_Score_With_HSAB_Protonated"]
+        # Add binary_reactive_protonated column: 1 if residue is in top N types, 0 otherwise
+        df_protonated["binary_reactive_protonated"] = (
+            df_protonated["Residue"].isin(top_types_protonated)
+        ).astype(int)
         df_protonated["Combined_Score"] = (
             df_protonated["Accessibility_Score"] * 
             df_protonated["Reactivity_Score_Protonated"]
@@ -1537,17 +1613,24 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
             by=["Binary_Score", "Binary_Score_With_HSAB", "Combined_Score"], 
             ascending=[False, False, False]
         )
+        df_protonated_sorted = df_protonated_sorted.rename(columns={"pKa": "Propka pKa"})
+        if "Combined_Score" in df_protonated_sorted.columns:
+            df_protonated_sorted = df_protonated_sorted.drop(columns=["Combined_Score"])
         protonated_csv = os.path.join(output_dir, f"protonated_ranked_targets_{warhead_safe_name}.csv")
         df_protonated_sorted.to_csv(protonated_csv, index=False)
-        print(f"      💾 Saved protonated (top {top_n_types} protonated types) to: {protonated_csv}")
+        print(f"      💾 Saved protonated (all residues with binary_reactive_protonated indicator) to: {protonated_csv}")
         
-        # Deprotonated version - filter to only top N deprotonated types
-        df_deprotonated = filtered_nucleophiles[filtered_nucleophiles["Residue"].isin(top_types_deprotonated)].copy()
+        # Deprotonated version - KEEP ALL residues, but add binary_reactive column for top N types
+        df_deprotonated = filtered_nucleophiles.copy()
         df_deprotonated["Reactivity_Score"] = df_deprotonated["Reactivity_Score_Deprotonated"]
         df_deprotonated["Binary_Reactivity"] = df_deprotonated["Binary_Reactivity_Deprotonated"]
         df_deprotonated["Binary_Orbital"] = df_deprotonated["Binary_Orbital_Deprotonated"]
         df_deprotonated["Binary_Score"] = df_deprotonated["Binary_Score_Deprotonated"]
         df_deprotonated["Binary_Score_With_HSAB"] = df_deprotonated["Binary_Score_With_HSAB_Deprotonated"]
+        # Add binary_reactive_deprotonated column: 1 if residue is in top N types, 0 otherwise
+        df_deprotonated["binary_reactive_deprotonated"] = (
+            df_deprotonated["Residue"].isin(top_types_deprotonated)
+        ).astype(int)
         df_deprotonated["Combined_Score"] = (
             df_deprotonated["Accessibility_Score"] * 
             df_deprotonated["Reactivity_Score_Deprotonated"]
@@ -1556,9 +1639,34 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
             by=["Binary_Score", "Binary_Score_With_HSAB", "Combined_Score"], 
             ascending=[False, False, False]
         )
+        df_deprotonated_sorted = df_deprotonated_sorted.rename(columns={"pKa": "Propka pKa"})
+        if "Combined_Score" in df_deprotonated_sorted.columns:
+            df_deprotonated_sorted = df_deprotonated_sorted.drop(columns=["Combined_Score"])
         deprotonated_csv = os.path.join(output_dir, f"deprotonated_ranked_targets_{warhead_safe_name}.csv")
         df_deprotonated_sorted.to_csv(deprotonated_csv, index=False)
-        print(f"      💾 Saved deprotonated (top {top_n_types} deprotonated types) to: {deprotonated_csv}")
+        print(f"      💾 Saved deprotonated (all residues with binary_reactive_deprotonated indicator) to: {deprotonated_csv}")
+        # Run Deprotonation analysis for the per-warhead ranked deprotonated CSV
+        after_deprotonation_count, after_deprotonation_status = run_deprotonation_analysis(
+            deprotonated_csv,
+            pdb_path,
+            output_dir,
+            f"per-warhead {warhead_safe_name}"
+        )
+
+        # Update filter statistics with deprotonation count (if available)
+        try:
+            if warhead_name in filter_statistics and 'deprotonated' in filter_statistics[warhead_name]:
+                filter_statistics[warhead_name]['deprotonated']['after_deprotonation'] = after_deprotonation_count
+                filter_statistics[warhead_name]['deprotonated']['deprotonation_status'] = after_deprotonation_status
+            else:
+                # Ensure structure exists
+                filter_statistics.setdefault(warhead_name, {})
+                filter_statistics[warhead_name].setdefault('deprotonated', {})
+                filter_statistics[warhead_name]['deprotonated']['after_deprotonation'] = after_deprotonation_count
+                filter_statistics[warhead_name]['deprotonated']['deprotonation_status'] = after_deprotonation_status
+        except Exception:
+            pass
+
         
         # Add to combined results (include warhead name for per-warhead checking in test mode)
         all_results.append({
@@ -1598,6 +1706,8 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
     deprotonated_combined_csv = os.path.join(output_dir, "deprotonated_ranked_covalent_targets_all_warheads.csv")
     combined_deprotonated.to_csv(deprotonated_combined_csv, index=False)
     print(f"   💾 Saved combined deprotonated results to: {deprotonated_combined_csv}")
+    # Generate extra deprotonation predictions for the combined all-warheads output
+    run_deprotonation_analysis(deprotonated_combined_csv, pdb_path, output_dir, "combined all-warheads")
     
     # Display top hits across all warheads (using deprotonated as primary)
     print("\n🏆 TOP 10 COVALENT BINDING CANDIDATES - DEPROTONATED (across all warheads):")
@@ -1794,6 +1904,7 @@ def generate_filtering_statistics_report(filter_statistics, output_dir):
             f.write("-" * 100 + "\n\n")
             
             deprot = stats["deprotonated"]
+            deprot_status = deprot.get("deprotonation_status", "ok")
             
             # Initial State: Total residues in PDB (all amino acids)
             f.write(f"Initial State: All Residues in PDB\n")
@@ -1830,20 +1941,47 @@ def generate_filtering_statistics_report(filter_statistics, output_dir):
             f.write(f"  Count: {after_orb:,}\n")
             f.write(f"  Relative Reduction: {rel_pct:.1f}% (from {after_react:,} to {after_orb:,})\n")
             f.write(f"  Absolute Reduction: {abs_pct:.1f}% (from original {total_residues:,})\n\n")
-            
-            # Step 4: After HSAB match filter
+            # Step 4: Deprotonation filter (applies only for deprotonated analysis)
+            after_deprot = deprot.get("after_deprotonation", 0)
+            if deprot_status == "failed" or after_deprot is None:
+                rel_pct, abs_pct = None, None
+            else:
+                rel_pct, abs_pct = calc_percentages(after_deprot, after_orb, total_residues)
+            f.write(f"Step 4: Deprotonation Filter (model-based)\n")
+            if deprot_status == "failed" or after_deprot is None:
+                f.write(f"  Count: FAILED\n")
+                f.write(f"  Relative Reduction: FAILED (deprotonation model did not return results)\n")
+                f.write(f"  Absolute Reduction: FAILED (deprotonation model did not return results)\n\n")
+            else:
+                f.write(f"  Count: {after_deprot:,}\n")
+                f.write(f"  Relative Reduction: {rel_pct:.1f}% (from {after_orb:,} to {after_deprot:,})\n")
+                f.write(f"  Absolute Reduction: {abs_pct:.1f}% (from original {total_residues:,})\n\n")
+
+            # Step 5: After HSAB match filter
             after_hsab = deprot["after_hsab"]
-            rel_pct, abs_pct = calc_percentages(after_hsab, after_orb, total_residues)
-            f.write(f"Step 4: Filter by HSAB Match\n")
-            f.write(f"  Count: {after_hsab:,}\n")
-            f.write(f"  Relative Reduction: {rel_pct:.1f}% (from {after_orb:,} to {after_hsab:,})\n")
-            f.write(f"  Absolute Reduction: {abs_pct:.1f}% (from original {total_residues:,})\n\n")
+            if deprot_status == "failed" or after_deprot is None:
+                rel_pct, abs_pct = None, None
+            else:
+                rel_pct, abs_pct = calc_percentages(after_hsab, after_deprot if after_deprot is not None else after_orb, total_residues)
+            f.write(f"Step 5: Filter by HSAB Match\n")
+            if deprot_status == "failed" or after_deprot is None:
+                f.write(f"  Count: FAILED\n")
+                f.write(f"  Relative Reduction: FAILED (depends on deprotonation output)\n")
+                f.write(f"  Absolute Reduction: FAILED (depends on deprotonation output)\n\n")
+            else:
+                f.write(f"  Count: {after_hsab:,}\n")
+                f.write(f"  Relative Reduction: {rel_pct:.1f}% (from {after_deprot if after_deprot is not None else after_orb:,} to {after_hsab:,})\n")
+                f.write(f"  Absolute Reduction: {abs_pct:.1f}% (from original {total_residues:,})\n\n")
             
             # Final: All filters pass
-            final = deprot["final"]
-            f.write(f"Final: All Filters Pass (Accessible + Reactive + Orbital)\n")
-            f.write(f"  Count: {final:,}\n")
-            f.write(f"  Total Reduction: {((total_residues - final) / total_residues * 100):.1f}% (from {total_residues:,} to {final:,})\n\n")
+            final = after_deprot
+            f.write(f"Final: All Filters Pass (Accessible + Reactive + Orbital + Deprotonation)\n")
+            if deprot_status == "failed" or final is None:
+                f.write(f"  Count: FAILED\n")
+                f.write(f"  Total Reduction: FAILED\n\n")
+            else:
+                f.write(f"  Count: {final:,}\n")
+                f.write(f"  Total Reduction: {((total_residues - final) / total_residues * 100):.1f}% (from {total_residues:,} to {final:,})\n\n")
             
             # Final with HSAB: All filters pass including HSAB
             f.write(f"Final: All Filters Pass with HSAB (Accessible + Reactive + Orbital + HSAB)\n")
@@ -1893,6 +2031,20 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
         nucleophile_site_lookup = result.get("nucleophile_site_lookup", {})
         
         # Helper function to check if test site is in final results
+        def get_binary_column(df, is_protonated, with_hsab=False):
+            """Detect and return the correct binary column name based on DataFrame columns."""
+            if df is None:
+                return None
+            state_suffix = "_Protonated" if is_protonated else "_Deprotonated"
+            if with_hsab:
+                col_candidates = [f"Binary_Score_With_HSAB{state_suffix}", "Binary_Score_With_HSAB"]
+            else:
+                col_candidates = [f"Binary_Score{state_suffix}", "Binary_Score"]
+            for col in col_candidates:
+                if col in df.columns:
+                    return col
+            return None
+
         def check_site_found(df, residue, resnum, chain, binary_col="Binary_Score"):
             """Check if a specific residue is in the dataframe with binary column == 1
             Returns: True if found, False if not found, 'no matches' if no residues pass filter
@@ -1902,6 +2054,10 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
                 return "no matches"
             if df.empty:
                 print(f"  DEBUG: DataFrame is empty for {binary_col}")
+                return "no matches"
+            # Verify column exists
+            if binary_col not in df.columns:
+                print(f"  DEBUG: Column '{binary_col}' not found in DataFrame. Available: {list(df.columns)}")
                 return "no matches"
             # Filter for residues that pass all filters (binary column == 1)
             passing = df[df[binary_col] == 1]
@@ -1930,7 +2086,7 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
             
             return len(match) > 0
 
-        def evaluate_site_steps(warhead_name, is_protonated):
+        def evaluate_site_steps(warhead_name, is_protonated, after_deprotonation_count=None):
             """Evaluate site-level filter progression for one warhead/state."""
             if not (test_mode and test_residue and test_resnum is not None and test_chain):
                 return {
@@ -1939,6 +2095,7 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
                     "step1_accessible_pass": "",
                     "step2_reactivity_pass": "",
                     "step3_orbital_pass": "",
+                    "step5_deprotonation_pass": "",
                     "failed_step": "",
                     "succeeded_steps": "",
                 }
@@ -1952,6 +2109,7 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
             step1_accessible_pass = False
             step2_reactivity_pass = False
             step3_orbital_pass = False
+            step5_deprotonation_pass = "" if is_protonated else False
 
             site_info = nucleophile_site_lookup.get(site_key)
             if site_info is not None:
@@ -1974,6 +2132,9 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
                 orbital_entry = orbital_map.get(residue_clean, {})
                 step3_orbital_pass = bool(orbital_entry.get("compatible", False))
 
+            if not is_protonated and step3_orbital_pass:
+                step5_deprotonation_pass = bool((after_deprotonation_count or 0) > 0)
+
             succeeded = []
             if step0_nucleophilic_pass:
                 succeeded.append("step0_nucleophilic")
@@ -1983,8 +2144,13 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
                 succeeded.append("step2_reactivity")
             if step3_orbital_pass:
                 succeeded.append("step3_orbital")
+            if not is_protonated and step5_deprotonation_pass:
+                succeeded.append("step5_deprotonation")
 
             found_site = step0_nucleophilic_pass and step1_accessible_pass and step2_reactivity_pass and step3_orbital_pass
+            if not is_protonated:
+                found_site = found_site and bool(step5_deprotonation_pass)
+
             if found_site:
                 failed_step = ""
             elif not step0_nucleophilic_pass:
@@ -1993,8 +2159,12 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
                 failed_step = "step1_accessible"
             elif not step2_reactivity_pass:
                 failed_step = "step2_reactivity"
-            else:
+            elif not step3_orbital_pass:
                 failed_step = "step3_orbital"
+            elif not is_protonated and not step5_deprotonation_pass:
+                failed_step = "step5_deprotonation"
+            else:
+                failed_step = ""
 
             return {
                 "found_site": found_site,
@@ -2002,6 +2172,7 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
                 "step1_accessible_pass": step1_accessible_pass,
                 "step2_reactivity_pass": step2_reactivity_pass,
                 "step3_orbital_pass": step3_orbital_pass,
+                "step5_deprotonation_pass": step5_deprotonation_pass,
                 "failed_step": failed_step,
                 "succeeded_steps": ";".join(succeeded),
             }
@@ -2035,7 +2206,12 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
                 "step4_starting_count": "",
                 "step4_filtered_count": "",
                 "step4_relative_reduction_pct": "",
-                "step4_absolute_reduction_pct": ""
+                "step4_absolute_reduction_pct": "",
+                "step5_starting_count": "",
+                "step5_filtered_count": "",
+                "step5_relative_reduction_pct": "",
+                "step5_absolute_reduction_pct": "",
+                "step5_status": ""
             }
             if test_mode:
                 row_data["found_site"] = ""
@@ -2044,6 +2220,7 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
                 row_data["step1_accessible_pass"] = ""
                 row_data["step2_reactivity_pass"] = ""
                 row_data["step3_orbital_pass"] = ""
+                row_data["step5_deprotonation_pass"] = ""
                 row_data["failed_step"] = ""
                 row_data["succeeded_steps"] = ""
             rows.append(row_data)
@@ -2109,6 +2286,7 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
                 "step1_accessible_pass": "",
                 "step2_reactivity_pass": "",
                 "step3_orbital_pass": "",
+                "step5_deprotonation_pass": "",
                 "failed_step": "",
                 "succeeded_steps": "",
             }
@@ -2120,8 +2298,19 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
                     print(f"  DEBUG: Found DataFrame with {len(warhead_df_prot)} rows for protonated {warhead_name}")
                 else:
                     print(f"  DEBUG: No DataFrame found for protonated {warhead_name}")
-                site_found_prot = check_site_found(warhead_df_prot, test_residue, test_resnum, test_chain, "Binary_Score")
-                site_found_with_hsab_prot = check_site_found(warhead_df_prot, test_residue, test_resnum, test_chain, "Binary_Score_With_HSAB")
+                # Use dynamic column detection
+                col_binary = get_binary_column(warhead_df_prot, is_protonated=True, with_hsab=False)
+                col_binary_hsab = get_binary_column(warhead_df_prot, is_protonated=True, with_hsab=True)
+                if col_binary:
+                    site_found_prot = check_site_found(warhead_df_prot, test_residue, test_resnum, test_chain, col_binary)
+                else:
+                    print(f"  DEBUG: Could not find binary column for protonated")
+                    site_found_prot = False
+                if col_binary_hsab:
+                    site_found_with_hsab_prot = check_site_found(warhead_df_prot, test_residue, test_resnum, test_chain, col_binary_hsab)
+                else:
+                    print(f"  DEBUG: Could not find binary_with_hsab column for protonated")
+                    site_found_with_hsab_prot = False
                 site_eval_prot = evaluate_site_steps(warhead_name, is_protonated=True)
                 site_found_prot = site_eval_prot["found_site"]
             
@@ -2151,7 +2340,12 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
                 "step4_starting_count": after_orb_prot,
                 "step4_filtered_count": after_hsab_prot,
                 "step4_relative_reduction_pct": f"{step4_rel:.2f}",
-                "step4_absolute_reduction_pct": f"{step4_abs:.2f}"
+                "step4_absolute_reduction_pct": f"{step4_abs:.2f}",
+                "step5_starting_count": "",
+                "step5_filtered_count": "",
+                "step5_relative_reduction_pct": "",
+                "step5_absolute_reduction_pct": "",
+                "step5_status": ""
             }
             if test_mode:
                 row_data_prot["found_site"] = site_found_prot
@@ -2160,6 +2354,7 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
                 row_data_prot["step1_accessible_pass"] = site_eval_prot["step1_accessible_pass"]
                 row_data_prot["step2_reactivity_pass"] = site_eval_prot["step2_reactivity_pass"]
                 row_data_prot["step3_orbital_pass"] = site_eval_prot["step3_orbital_pass"]
+                row_data_prot["step5_deprotonation_pass"] = site_eval_prot["step5_deprotonation_pass"]
                 row_data_prot["failed_step"] = site_eval_prot["failed_step"]
                 row_data_prot["succeeded_steps"] = site_eval_prot["succeeded_steps"]
             rows.append(row_data_prot)
@@ -2169,6 +2364,8 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
             after_react_deprot = deprot["after_reactivity"]
             after_orb_deprot = deprot["after_orbital"]
             after_hsab_deprot = deprot["after_hsab"]
+            after_deprot_deprot = deprot.get("after_deprotonation", 0)
+            deprot_status = deprot.get("deprotonation_status", "ok")
             final_deprot = deprot["final"]
             
             # Step 0: Nucleophilic filter (same as protonated)
@@ -2179,6 +2376,11 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
             step3_rel, step3_abs = calc_reduction(after_orb_deprot, after_react_deprot, total_residues)
             # Step 4: HSAB filter
             step4_rel, step4_abs = calc_reduction(after_hsab_deprot, after_orb_deprot, total_residues)
+            # Step 5: Deprotonation filter (reduction is anchored from step 3, not HSAB)
+            if deprot_status == "failed" or after_deprot_deprot is None:
+                step5_rel, step5_abs = None, None
+            else:
+                step5_rel, step5_abs = calc_reduction(after_deprot_deprot, after_orb_deprot, total_residues)
             
             # Check if test site is found (for test mode) - check THIS WARHEAD ONLY
             site_found_deprot = False
@@ -2189,6 +2391,7 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
                 "step1_accessible_pass": "",
                 "step2_reactivity_pass": "",
                 "step3_orbital_pass": "",
+                "step5_deprotonation_pass": "",
                 "failed_step": "",
                 "succeeded_steps": "",
             }
@@ -2200,9 +2403,24 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
                     print(f"  DEBUG: Found DataFrame with {len(warhead_df_deprot)} rows for deprotonated {warhead_name}")
                 else:
                     print(f"  DEBUG: No DataFrame found for deprotonated {warhead_name}")
-                site_found_deprot = check_site_found(warhead_df_deprot, test_residue, test_resnum, test_chain, "Binary_Score")
-                site_found_with_hsab_deprot = check_site_found(warhead_df_deprot, test_residue, test_resnum, test_chain, "Binary_Score_With_HSAB")
-                site_eval_deprot = evaluate_site_steps(warhead_name, is_protonated=False)
+                # Use dynamic column detection
+                col_binary = get_binary_column(warhead_df_deprot, is_protonated=False, with_hsab=False)
+                col_binary_hsab = get_binary_column(warhead_df_deprot, is_protonated=False, with_hsab=True)
+                if col_binary:
+                    site_found_deprot = check_site_found(warhead_df_deprot, test_residue, test_resnum, test_chain, col_binary)
+                else:
+                    print(f"  DEBUG: Could not find binary column for deprotonated")
+                    site_found_deprot = False
+                if col_binary_hsab:
+                    site_found_with_hsab_deprot = check_site_found(warhead_df_deprot, test_residue, test_resnum, test_chain, col_binary_hsab)
+                else:
+                    print(f"  DEBUG: Could not find binary_with_hsab column for deprotonated")
+                    site_found_with_hsab_deprot = False
+                site_eval_deprot = evaluate_site_steps(
+                    warhead_name,
+                    is_protonated=False,
+                    after_deprotonation_count=after_deprot_deprot,
+                )
                 site_found_deprot = site_eval_deprot["found_site"]
             
             row_data_deprot = {
@@ -2231,7 +2449,12 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
                 "step4_starting_count": after_orb_deprot,
                 "step4_filtered_count": after_hsab_deprot,
                 "step4_relative_reduction_pct": f"{step4_rel:.2f}",
-                "step4_absolute_reduction_pct": f"{step4_abs:.2f}"
+                "step4_absolute_reduction_pct": f"{step4_abs:.2f}",
+                "step5_starting_count": after_orb_deprot,
+                "step5_filtered_count": "FAILED" if deprot_status == "failed" or after_deprot_deprot is None else after_deprot_deprot,
+                "step5_relative_reduction_pct": "FAILED" if step5_rel is None else f"{step5_rel:.2f}",
+                "step5_absolute_reduction_pct": "FAILED" if step5_abs is None else f"{step5_abs:.2f}",
+                "step5_status": deprot_status
             }
             if test_mode:
                 row_data_deprot["found_site"] = site_found_deprot
@@ -2240,6 +2463,7 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
                 row_data_deprot["step1_accessible_pass"] = site_eval_deprot["step1_accessible_pass"]
                 row_data_deprot["step2_reactivity_pass"] = site_eval_deprot["step2_reactivity_pass"]
                 row_data_deprot["step3_orbital_pass"] = site_eval_deprot["step3_orbital_pass"]
+                row_data_deprot["step5_deprotonation_pass"] = site_eval_deprot["step5_deprotonation_pass"]
                 row_data_deprot["failed_step"] = site_eval_deprot["failed_step"]
                 row_data_deprot["succeeded_steps"] = site_eval_deprot["succeeded_steps"]
             rows.append(row_data_deprot)

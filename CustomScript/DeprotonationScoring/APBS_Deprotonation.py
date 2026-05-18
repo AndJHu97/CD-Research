@@ -25,6 +25,7 @@ import shutil
 import subprocess
 import tempfile
 import numpy as np
+import re
 
 # ---------------------------------------------------------------------------
 # Target atom lookup (reactive where applicable, otherwise a central atom).
@@ -163,6 +164,101 @@ def write_pdb(atoms, out_path, header="REMARK  Written by apbs_site_analysis.py\
             )
         f.write("END\n")
 
+def split_pqr_line(line: str):
+    """Split PQR line handling concatenated negative numbers like -11.936-100.539."""
+    line = re.sub(r'([\d\.])-', r'\1 -', line)
+    return line.split()
+
+
+def sanitize_pqr(pqr_path: str) -> None:
+    """
+    Rewrite PQR with guaranteed whitespace between all fields.
+    Fixes concatenated coordinate fields from large negative values.
+    PQR format: ATOM serial name resname chain resseq x y z charge radius
+    """
+    fixed_lines = []
+    fixed_count = 0
+
+    with open(pqr_path) as f:
+        for line in f:
+            if not (line.startswith("ATOM") or line.startswith("HETATM")):
+                fixed_lines.append(line)
+                continue
+            parts = split_pqr_line(line.strip())
+            # Standard PQR has 10 or 11 fields depending on whether chain is present
+            if len(parts) < 10:
+                fixed_lines.append(line)
+                continue
+            try:
+                record = parts[0]
+                serial = int(parts[1])
+                atom_name = parts[2]
+                resname = parts[3]
+                # Detect whether chain field is present
+                if len(parts) == 10:
+                    chain_id = ""
+                    resseq   = int(parts[4])
+                    x, y, z  = float(parts[5]), float(parts[6]), float(parts[7])
+                    charge   = float(parts[8])
+                    radius   = float(parts[9])
+                else:
+                    chain_id = parts[4]
+                    resseq   = int(parts[5])
+                    x, y, z  = float(parts[6]), float(parts[7]), float(parts[8])
+                    charge   = float(parts[9])
+                    radius   = float(parts[10])
+
+                fixed_line = (
+                    f"{record:<6}{serial:5d} {atom_name:<4} {resname:<4}"
+                    f"{chain_id:1}{resseq:4d}    "
+                    f"{x:8.3f} {y:8.3f} {z:8.3f} "
+                    f"{charge:8.4f} {radius:7.4f}\n"
+                )
+                fixed_lines.append(fixed_line)
+                fixed_count += 1
+            except (ValueError, IndexError):
+                fixed_lines.append(line)
+
+    with open(pqr_path, "w") as f:
+        f.writelines(fixed_lines)
+
+    print(f"[pqr] Sanitized {fixed_count} ATOM/HETATM lines in PQR.")
+
+def clean_pdb_for_pdb2pqr(pdb_path, out_path):
+    MOD_TO_CANON = {
+        "CSD": "CYS",
+        "CYM": "CYS",
+        "CSO": "CYS",
+        "SEP": "SER",
+        "TPO": "THR",
+        "PTR": "TYR",
+        "HIE": "HIS",
+        "HID": "HIS",
+        "HIP": "HIS",
+    }
+
+    with open(pdb_path) as fin, open(out_path, "w") as fout:
+        for line in fin:
+            if line.startswith(("ANISOU",)):
+                continue
+            if line.startswith(("HETATM",)):
+                # optionally skip ligands entirely OR remap residues only if protein-like
+                continue
+
+            if line.startswith("ATOM"):
+                resname = line[17:20].strip()
+
+                if resname in MOD_TO_CANON:
+                    line = line[:17] + MOD_TO_CANON[resname].ljust(3) + line[20:]
+
+                # optionally strip hydrogens
+                if line[12:16].strip().startswith("H"):
+                    continue
+
+                fout.write(line)
+            else:
+                fout.write(line)
+
 
 # ---------------------------------------------------------------------------
 # pdb2pqr: assign protonation states
@@ -170,9 +266,16 @@ def write_pdb(atoms, out_path, header="REMARK  Written by apbs_site_analysis.py\
 
 def run_pdb2pqr(pdb_path, pqr_path, ph=7.4, force_field="AMBER"):
     """
-    Runs pdb2pqr to assign protonation states at the given pH.
-    Returns True on success.
+    Runs pdb2pqr to assign protonation states.
+    First tries with PROPKA at the given pH.
+    If that fails (e.g. non-standard residues), falls back to standard
+    physiologic protonation states without PROPKA.
     """
+    cleaned = pdb_path.replace(".pdb", "_clean.pdb")
+    clean_pdb_for_pdb2pqr(pdb_path, cleaned)
+
+
+    # Attempt 1: PROPKA at specified pH
     cmd = [
         "pdb2pqr",
         "--ff", force_field,
@@ -180,22 +283,69 @@ def run_pdb2pqr(pdb_path, pqr_path, ph=7.4, force_field="AMBER"):
         "--titration-state-method", "propka",
         "--drop-water",
         "--pdb-output", pdb_path.replace(".pdb", "_propka.pdb"),
-        pdb_path,
+        cleaned,
         pqr_path,
     ]
-    print(f"\n[pdb2pqr] Running: {' '.join(cmd)}")
+    print(f"\n[pdb2pqr] Running with PROPKA at pH {ph}...")
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if result.returncode != 0:
-            print(f"[pdb2pqr] STDERR:\n{result.stderr[-2000:]}")
-            return False
-        print(f"[pdb2pqr] Success → {pqr_path}")
-        return True
+        if result.returncode == 0:
+            print(f"[pdb2pqr] Success → {pqr_path}")
+            return True
+        print(f"[pdb2pqr] PROPKA failed, falling back to physiologic defaults...")
     except FileNotFoundError:
         print("[pdb2pqr] ERROR: pdb2pqr not found. Install with: pip install pdb2pqr")
         return False
     except subprocess.TimeoutExpired:
         print("[pdb2pqr] ERROR: timed out after 120s")
+        return False
+
+   # Attempt 2: No PROPKA, just standard protonation
+    cmd_fallback = [
+        "pdb2pqr",
+        "--ff", force_field,
+        "--drop-water",
+        cleaned,
+        pqr_path,
+    ]
+    print(f"[pdb2pqr] Running without PROPKA (physiologic defaults)...")
+    try:
+        result = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=120)
+        if result.returncode == 0:
+            print(f"[pdb2pqr] Success with physiologic defaults → {pqr_path}")
+            return True
+        print(f"[pdb2pqr] Fallback also failed, trying stripped PDB...")
+    except subprocess.TimeoutExpired:
+        print("[pdb2pqr] ERROR: fallback timed out, trying stripped PDB...")
+
+    # Attempt 3: Strip non-standard residues and retry
+    print(f"[pdb2pqr] Stripping non-standard residues and retrying...")
+    stripped_path = pqr_path.replace(".pqr", "_stripped.pdb")
+    with open(cleaned) as f_in, open(stripped_path, "w") as f_out:
+        for line in f_in:
+            if not line.startswith(("ATOM", "TER", "END")):
+                continue
+
+            f_out.write(line)
+
+    cmd_stripped = [
+        "pdb2pqr",
+        "--ff", force_field,
+        "--drop-water",
+        stripped_path,
+        pqr_path,
+    ]
+
+    print(f"[pdb2pqr] Using cleaned structure: {cleaned}")
+    try:
+        result = subprocess.run(cmd_stripped, capture_output=True, text=True, timeout=120)
+        if result.returncode == 0:
+            print(f"[pdb2pqr] Success after stripping → {pqr_path}")
+            return True
+        print(f"[pdb2pqr] All attempts failed:\n{result.stderr[-500:]}")
+        return False
+    except subprocess.TimeoutExpired:
+        print("[pdb2pqr] ERROR: stripped attempt timed out")
         return False
 
 
@@ -245,6 +395,28 @@ def neutralize_target_residue_pqr(pqr_path, chain, resname, resseq):
         print(f"[pqr] Neutralized charges on {neutralized} atoms in {resname}{resseq}.")
 
 
+def compute_cglen(pqr_path, padding=20.0):
+    """Compute coarse grid size from actual atom coordinates in the PQR."""
+    xs, ys, zs = [], [], []
+    with open(pqr_path) as f:
+        for line in f:
+            if line.startswith("ATOM") or line.startswith("HETATM"):
+                parts = line.split()
+                try:
+                    xs.append(float(parts[-5]))
+                    ys.append(float(parts[-4]))
+                    zs.append(float(parts[-3]))
+                except (ValueError, IndexError):
+                    continue
+    if not xs:
+        return 150.0
+    xlen = max(xs) - min(xs) + padding
+    ylen = max(ys) - min(ys) + padding
+    zlen = max(zs) - min(zs) + padding
+    # Use the largest dimension for all three so the box is always cubic and safe
+    return max(xlen, ylen, zlen, 150.0)
+
+
 # ---------------------------------------------------------------------------
 # APBS input file generation
 # ---------------------------------------------------------------------------
@@ -257,6 +429,9 @@ def write_apbs_input(pqr_path, dx_prefix, apbs_input_path, fine_grid_center, fin
     cx, cy, cz = fine_grid_center
     pqr_path  = os.path.abspath(pqr_path)   
     dx_prefix = os.path.abspath(dx_prefix)   
+
+    cglen = compute_cglen(pqr_path)  # ← dynamic instead of hardcoded
+    print(f"[apbs] Coarse grid size: {cglen:.1f} Å")
 
     apbs_input = f"""# APBS input — generated by apbs_site_analysis.py
 read
@@ -271,7 +446,7 @@ elec name whole_protein
     dime 97 97 97
 
     # Coarse grid: covers the whole protein
-    cglen 150.0 150.0 150.0
+    cglen {cglen:.1f} {cglen:.1f} {cglen:.1f}
     cgcent mol 1
 
     # Fine grid: centred on the reactive site
@@ -555,6 +730,30 @@ def neutralize_target_residue_pqr(pqr_path, chain, resname, resseq):
 
     print(f"[pqr] Neutralized {neutralized} atoms.")
 
+
+def extract_and_renumber_model1(pdb_path: str, out_path: str) -> None:
+    """Extract MODEL 1 only and renumber atom serials from 1."""
+    in_model1 = False
+    serial = 1
+    found_models = False
+
+    with open(pdb_path) as f_in, open(out_path, "w") as f_out:
+        for line in f_in:
+            if line.startswith("MODEL"):
+                found_models = True
+                model_num = line.split()[1] if len(line.split()) > 1 else ""
+                in_model1 = (model_num == "1")
+                continue
+            if line.startswith("ENDMDL"):
+                if in_model1:
+                    break
+                continue
+            if not found_models or in_model1:
+                if line.startswith(("ATOM", "HETATM")):
+                    line = f"{line[:6]}{serial:5d}{line[11:]}"
+                    serial += 1
+                f_out.write(line)
+
 # ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
@@ -590,7 +789,13 @@ def run_apbs_site_analysis(pdb_path, residue_spec, radius=8.0, ph=7.4,
     print(f"[setup] Sphere radius: {radius} Å  |  pH: {ph}")
 
     # --- 2. Parse PDB and find nucleophilic atom ---
-    atoms = parse_pdb_atoms(pdb_path)
+    # --- 2. Parse PDB and find nucleophilic atom ---
+    # Extract model 1 first so atom lookup and coordinates match what pdb2pqr will see
+    clean_pdb = pdb_path.replace(".pdb", "_model1.pdb")
+    if not os.path.exists(clean_pdb):
+        extract_and_renumber_model1(pdb_path, clean_pdb)
+        print(f"[preprocess] Extracted MODEL 1 → {clean_pdb}")
+    atoms = parse_pdb_atoms(clean_pdb)
     if not atoms:
         print(f"ERROR: No ATOM records found in {pdb_path}")
         sys.exit(1)
@@ -634,13 +839,15 @@ def run_apbs_site_analysis(pdb_path, residue_spec, radius=8.0, ph=7.4,
 
     # --- 4. pdb2pqr on full protein ---
     # pdb2pqr needs the full protein for accurate PROPKA titration
-    success = run_pdb2pqr(pdb_path, pqr_path, ph=ph)
+    success = run_pdb2pqr(clean_pdb, pqr_path, ph=ph)
     if not success:
         print("\n[fallback] pdb2pqr failed. Attempting to continue with raw PDB...")
         print("  WARNING: No partial charges — APBS output will be unreliable.")
         print("  Install pdb2pqr:  pip install pdb2pqr")
         sys.exit(1)
 
+    #clean this to prevent any errors or formatting errors
+    sanitize_pqr(pqr_path)
     # Neutralize the target residue so it does not bias the local potential.
     neutralize_target_residue_pqr(pqr_path, chain, resname, resseq)
 

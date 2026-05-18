@@ -1,0 +1,39 @@
+Index,Protein Name,Species,pKa Classification,PDB,Chain,ResID in PDB,ResName,Expt. pKa,Mut. Pos.,Alternative PDBs,Notes,Sequence Identity > 30%,Sequence Identity > 90%,ResID in pKa paper,Warning,Expt. Uncertainty,Expt. Temp.,Expt. pH,Expt. Salt Concentration,Expt. Method,Reference
+1,Alkyltransferase,Human,Main,1EH6,A,145,CYS,5.3,,,,,,,,0.2,296 K,,0.25 M,UV spectrophotometry,https://www.ncbi.nlm.nih.gov/pubmed/12974631
+2,Alpha-1-Antitrypsin,Human,Main,1QLP,A,232,CYS,6.86,,,,,,,,0.05,298 K,5.0-10.0,100 mM,Reaction kinetics,https://www.ncbi.nlm.nih.gov/pubmed/11991955
+3,Alpha-Chymotrypsin,Bovine,Main,1YPH,C,40,HIS,7.2,,,,1EX3.A,,,,0.03,298 K,,0.5 M,1H NMR,https://pubs.acs.org/doi/abs/10.1021/bi00615a008
+4,Alpha-Chymotrypsin,Bovine,Main,1YPH,C,57,HIS,6.14,,,,1EX3.A,,,,0.04,298 K,,0.5 M,1H NMR,https://pubs.acs.org/doi/abs/10.1021/bi00615a008
+5,Alpha-Chymotrypsin,Bovine,Main,1YPH,C,102,ASP,2.77,,,,1EX3.A,,,,0.25,298 K,,0.5 M,1H NMR,https://pubs.acs.org/doi/abs/10.1021/bi00615a008
+7,Apolipoprotein-E,Human,Main,1GS9,A,69,LYS,10.4,,1NFN,,1LE2.A,,,,0.1,310 K,5.5-12.5,150 mM,NMR,https://www.ncbi.nlm.nih.gov/pubmed/12588864
+8,Apolipoprotein-E,Human,Alt. pKa (mutant),1LE2,A,69,LYS,10.1,R158C (R136C in PDB),,1LE2: R136C,1GS9.A,,,,0.1,310 K,7.0-12.0,,NMR,https://www.ncbi.nlm.nih.gov/pubmed/11369796
+9,Apolipoprotein-E,Human,Main,1GS9,A,72,LYS,10,,1NFN,,1LE2.A,,,,0.1,310 K,5.5-12.5,150 mM,NMR,https://www.ncbi.nlm.nih.gov/pubmed/12588864
+10,Apolipoprotein-E,Human,Alt. pKa (mutant),1LE2,A,72,LYS,10,R158C (R136C in PDB),,1LE2: R136C,1GS9.A,,,,0.1,310 K,7.0-12.0,,NMR,https://www.ncbi.nlm.nih.gov/pubmed/11369796
+11,Apolipoprotein-E,Human,Main,1GS9,A,75,LYS,10.1,,1NFN,,1LE2.A,,,,0.1,310 K,5.5-12.5,150 mM,NMR,https://www.ncbi.nlm.nih.gov/pubmed/12588864
+12,Apolipoprotein-E,Human,Alt. pKa (mutant),1LE2,A,75,LYS,10,R158C (R136C in PDB),,1LE2: R136C,1GS9.A,,,,0.1,310 K,7.0-12.0,,NMR,https://www.ncbi.nlm.nih.gov/pubmed/11369796
+13,Apolipoprotein-E,Human,Main,1GS9,A,95,LYS,10.1,,1NFN,,1LE2.A,,,,0.1,310 K,5.5-12.5,150 mM,NMR,https://www.ncbi.nlm.nih.gov/pubmed/12588864
+14,Apolipoprotein-E,Human,Alt. pKa (mutant),1LE2,A,95,LYS,10.2,R158C (R136C in PDB),,1LE2: R136C,1GS9.A,,,,0.1,310 K,7.0-12.0,,NMR,https://www.ncbi.nlm.nih.gov/pubmed/11369796
+15,Apolipoprotein-E,Human,Main,1GS9,A,143,LYS,9.5,,1NFN,,1LE2.A,,,,0.1,310 K,5.5-12.5,150 mM,NMR,https://www.ncbi.nlm.nih.gov/pubmed/12588864
+16,Apolipoprotein-E,Human,Alt. pKa (mutant),1LE2,A,143,LYS,9.4,R158C (R136C in PDB),,1LE2: R136C,1GS9.A,,,,0.1,310 K,7.0-12.0,,NMR,https://www.ncbi.nlm.nih.gov/pubmed/11369796
+17,Apolipoprotein-E,Human,Main,1GS9,A,146,LYS,9.2,,1NFN,,1LE2.A,,,,0.1,310 K,5.5-12.5,150 mM,NMR,https://www.ncbi.nlm.nih.gov/pubmed/12588864
+18,Apolipoprotein-E,Human,Alt. pKa (mutant),1LE2,A,146,LYS,9.9,R158C (R136C in PDB),,1LE2: R136C,1GS9.A,,,,0.1,310 K,7.0-12.0,,NMR,https://www.ncbi.nlm.nih.gov/pubmed/11369796
+19,Apolipoprotein-E,Human,Main,1GS9,A,157,LYS,11.1,,1NFN,,1LE2.A,,,,0.1,310 K,5.5-12.5,150 mM,NMR,https://www.ncbi.nlm.nih.gov/pubmed/12588864
+20,Apolipoprotein-E,Human,Alt. pKa (mutant),1LE2,A,157,LYS,10.9,R158C (R136C in PDB),,1LE2: R136C,1GS9.A,,,,0.1,310 K,7.0-12.0,,NMR,https://www.ncbi.nlm.nih.gov/pubmed/11369796
+22,"B1 Immunoglobulin-Binding Domain, Protein G",Streptococcus,Main,1PGB,A,3,TYR,>11,,"1GB1, 1PGA, 2GB1, 2QMT, 3GB1",,1IGD.A,,,pKa: range or ~,,298 K,1.5-11.6,100 mM,NMR,https://pubs.acs.org/doi/abs/10.1021/bi9630927
+23,"B1 Immunoglobulin-Binding Domain, Protein G",Streptococcus,Main,1PGB,A,4,LYS,>11,,"1GB1, 1PGA, 2GB1, 2QMT, 3GB1",,1IGD.A,,,pKa: range or ~,,298 K,1.5-11.6,100 mM,NMR,https://pubs.acs.org/doi/abs/10.1021/bi9630927
+24,"B1 Immunoglobulin-Binding Domain, Protein G",Streptococcus,Main,1PGB,A,10,LYS,~11,,"1GB1, 1PGA, 2GB1, 2QMT, 3GB1",,1IGD.A,,,pKa: range or ~,,298 K,1.5-11.6,,NMR,https://pubs.acs.org/doi/abs/10.1021/bi9630927
+25,"B1 Immunoglobulin-Binding Domain, Protein G",Streptococcus,Main,1PGB,A,13,LYS,>11,,"1GB1, 1PGA, 2GB1, 2QMT, 3GB1",,1IGD.A,,,pKa: range or ~,,298 K,1.5-11.6,,NMR,https://pubs.acs.org/doi/abs/10.1021/bi9630927
+26,"B1 Immunoglobulin-Binding Domain, Protein G",Streptococcus,Main,1PGB,A,15,GLU,4.4,,"1GB1, 1PGA, 2GB1, 2QMT, 3GB1",,1IGD.A,,,,0.1,298 K,1.5-11.6,,NMR,https://pubs.acs.org/doi/abs/10.1021/bi9630927
+27,"B1 Immunoglobulin-Binding Domain, Protein G",Streptococcus,Main,1PGB,A,19,GLU,3.7,,"1GB1, 1PGA, 2GB1, 2QMT, 3GB1",,1IGD.A,,,,0.15,298 K,1.5-11.6,,NMR,https://pubs.acs.org/doi/abs/10.1021/bi9630927
+28,"B1 Immunoglobulin-Binding Domain, Protein G",Streptococcus,Main,1PGB,A,22,ASP,2.9,,"1GB1, 1PGA, 2GB1, 2QMT, 3GB1",,1IGD.A,,,,0.1,298 K,1.5-11.6,,NMR,https://pubs.acs.org/doi/abs/10.1021/bi9630927
+29,"B1 Immunoglobulin-Binding Domain, Protein G",Streptococcus,Main,1PGB,A,27,GLU,4.5,,"1GB1, 1PGA, 2GB1, 2QMT, 3GB1",,1IGD.A,,,,0.1,298 K,1.5-11.6,,NMR,https://pubs.acs.org/doi/abs/10.1021/bi9630927
+30,"B1 Immunoglobulin-Binding Domain, Protein G",Streptococcus,Main,1PGB,A,28,LYS,10.9,,"1GB1, 1PGA, 2GB1, 2QMT, 3GB1",,1IGD.A,,,,,298 K,1.5-11.6,,NMR,https://pubs.acs.org/doi/abs/10.1021/bi9630927
+31,"B1 Immunoglobulin-Binding Domain, Protein G",Streptococcus,Main,1PGB,A,33,TYR,~11,,"1GB1, 1PGA, 2GB1, 2QMT, 3GB1",,1IGD.A,,,pKa: range or ~,,298 K,1.5-11.6,,NMR,https://pubs.acs.org/doi/abs/10.1021/bi9630927
+32,"B1 Immunoglobulin-Binding Domain, Protein G",Streptococcus,Main,1PGB,A,36,ASP,3.8,,"1GB1, 1PGA, 2GB1, 2QMT, 3GB1",,1IGD.A,,,,0.1,298 K,1.5-11.6,,NMR,https://pubs.acs.org/doi/abs/10.1021/bi9630927
+33,"B1 Immunoglobulin-Binding Domain, Protein G",Streptococcus,Main,1PGB,A,40,ASP,4,,"1GB1, 1PGA, 2GB1, 2QMT, 3GB1",,1IGD.A,,,,0.2,298 K,1.5-11.6,,NMR,https://pubs.acs.org/doi/abs/10.1021/bi9630927
+34,"B1 Immunoglobulin-Binding Domain, Protein G",Streptococcus,Main,1PGB,A,42,GLU,4.4,,"1GB1, 1PGA, 2GB1, 2QMT, 3GB1",,1IGD.A,,,,0.1,298 K,1.5-11.6,,NMR,https://pubs.acs.org/doi/abs/10.1021/bi9630927
+35,"B1 Immunoglobulin-Binding Domain, Protein G",Streptococcus,Main,1PGB,A,45,TYR,>12,,"1GB1, 1PGA, 2GB1, 2QMT, 3GB1",,1IGD.A,,,pKa: range or ~,,298 K,1.5-11.6,100 mM,NMR,https://pubs.acs.org/doi/abs/10.1021/bi9630927
+36,"B1 Immunoglobulin-Binding Domain, Protein G",Streptococcus,Main,1PGB,A,46,ASP,3.6,,"1GB1, 1PGA, 2GB1, 2QMT, 3GB1",,1IGD.A,,,,0.1,298 K,1.5-11.6,,NMR,https://pubs.acs.org/doi/abs/10.1021/bi9630927
+37,"B1 Immunoglobulin-Binding Domain, Protein G",Streptococcus,Main,1PGB,A,47,ASP,3.4,,"1GB1, 1PGA, 2GB1, 2QMT, 3GB1",,1IGD.A,,,,0.3,298 K,1.5-11.6,,NMR,https://pubs.acs.org/doi/abs/10.1021/bi9630927
+38,"B1 Immunoglobulin-Binding Domain, Protein G",Streptococcus,Main,1PGB,A,56,GLU,4,,"1GB1, 1PGA, 2GB1, 2QMT, 3GB1",,1IGD.A,,,,0.1,298 K,1.5-11.6,,NMR,https://pubs.acs.org/doi/abs/10.1021/bi9630927
+39,Bacteriorhodopsin,Halobacterium Salinarum,Main,7XJD,A,96,ASP,> 12 ,,,Ground state,,,,pKa: range or ~,,\,\,\,\,https://www.pnas.org/doi/abs/10.1073/pnas.96.10.5498
+40,Bacteriorhodopsin,Halobacterium Salinarum,Alt. pKa (state),7XJD,A,96,ASP,7.1,,,N intermediate (there is no structure of the N intermediate).,,,,,0.2,293,\,1 M,ATR/FT-IR difference spectroscopy,https://www.pnas.org/doi/abs/10.1073/pnas.96.10.5498

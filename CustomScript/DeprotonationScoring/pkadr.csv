@@ -52,7 +52,7 @@ Index,Protein Name,Species,pKa Classification,PDB,Chain,ResID in PDB,ResName,Exp
 52,Barnase,Bacillus Amyloliquefaciens,Main,1A2P,A,93,ASP,<2.0,,"1B2X, 1BNI, 1BNJ, 1BNR, 1FW7",,,,,pKa: range or ~,,303 K,0.2-6.3,50mM-600mM,2D 1H NMR,https://pubs.acs.org/doi/abs/10.1021/bi00029a018
 53,Barnase,Bacillus Amyloliquefaciens,Main,1A2P,A,101,ASP,2,,"1B2X, 1BNI, 1BNJ, 1BNR, 1FW7",,,,,,0.2,303 K,0.2-6.3,50mM-600mM,2D 1H NMR,https://pubs.acs.org/doi/abs/10.1021/bi00029a018
 54,Barnase,Bacillus Amyloliquefaciens,Main,1A2P,A,102,HIS,6.3,,"1B2X, 1BNI, 1BNJ, 1BNR, 1FW7",,,,,,0.05,298 K,6.0-9.0,5M,NMR,https://www.ncbi.nlm.nih.gov/pubmed/3173493
-55,Barnase,Bacillus Amyloliquefaciens,Main,1A2P,A,110,C-term,3.3,,"1B2X, 1BNI, 1BNJ, 1BNR, 1FW7",,,,,C/N-term,0.1,303 K,0.2-6.3,50mM-600mM,2D 1H NMR,https://pubs.acs.org/doi/abs/10.1021/bi00029a018
+55,Barnase,Bacillus Amyloliquefaciens,Main,1A2P,A,110,ARG,3.3,,"1B2X, 1BNI, 1BNJ, 1BNR, 1FW7",,,,,C/N-term,0.1,303 K,0.2-6.3,50mM-600mM,2D 1H NMR,https://pubs.acs.org/doi/abs/10.1021/bi00029a018
 56,BM2 protein,Influenza B Virus,Main,2KIX,A,27,HIS,7.9,,,,,,,,,,,,,https://www.sciencedirect.com/science/article/pii/S0021925820330465
 57,Bromelain Inhibitor,Pineapple,Main,1BI6,H,1,GLU,3.3,,,,,,,,0.1,313 K,1.5-7.0,,NMR,https://www.ncbi.nlm.nih.gov/pubmed/12674503
 58,Bromelain Inhibitor,Pineapple,Main,1BI6,H,2,GLU,3.3,,,,,,,,0.1,313 K,1.5-7.0,,NMR,https://www.ncbi.nlm.nih.gov/pubmed/12674503
@@ -92,7 +92,7 @@ Index,Protein Name,Species,pKa Classification,PDB,Chain,ResID in PDB,ResName,Exp
 92,Calbindin,Bovine,Main,4ICB,A,72,LYS,10.91,,"1IG5, 1IGV, 2BCA, 3ICB","Ca2+ loaded form, pKa from 13C NMR",,,,,0.07,300 K,5.25-12.25,,NMR,https://www.ncbi.nlm.nih.gov/pubmed/8683586
 93,Calbindin,Bovine,Alt. pKa,4ICB,A,72,LYS,11.01,,,pKa from 1H NMR ,,,,,0.05,300 K,5.25-12.25,,NMR,https://www.ncbi.nlm.nih.gov/pubmed/8683586
 94,Calbindin,Bovine,Alt. pKa (state),4ICB,A,72,LYS,11.33,,,"apo-form pKa, mean of 1H and 13C NMR",,,,,0.08,300 K,5.25-12.25,,NMR,https://www.ncbi.nlm.nih.gov/pubmed/8683586
-95,Calbindin,Bovine,Main,4ICB,A,75,C-term,3.2,,"1IG5, 1IGV, 2BCA, 3ICB",Ca2+ loaded form,,,,C/N-term,0.05,300 K,2.4-7.6,1 M,NMR,https://onlinelibrary.wiley.com/doi/full/10.1002/%28SICI%291097-0134%2819991001%2937%3A1%3C106%3A%3AAID-PROT10%3E3.0.CO%3B2-M
+95,Calbindin,Bovine,Main,4ICB,A,75,GLN,3.2,,"1IG5, 1IGV, 2BCA, 3ICB",Ca2+ loaded form,,,,C/N-term,0.05,300 K,2.4-7.6,1 M,NMR,https://onlinelibrary.wiley.com/doi/full/10.1002/%28SICI%291097-0134%2819991001%2937%3A1%3C106%3A%3AAID-PROT10%3E3.0.CO%3B2-M
 96,Calmodulin,Chicken,Main,4BYA,A,34,HIS,5.92,M144H,,"4BYA: M144H, only has A; resid 144 should be 71 in PDB",1PRW.A,,107,,0.02,298K,4.5-8.5,60mM,NMR,https://onlinelibrary.wiley.com/doi/am-pdf/10.1002/prot.25321
 97,Calmodulin,Chicken,Main,4BYA,A,71,HIS,6.79,M144H,,"4BYA: M144H, only has A; resid 144 should be 71 in PDB",1PRW.A,,144,,0.02,298K,4.5-8.5,60mM,NMR,https://onlinelibrary.wiley.com/doi/am-pdf/10.1002/prot.25321
 98,Calmodulin,Bovine,Main,1PRW,A,13,LYS,10.09,,,Ca2+ loaded form,4BYA.A,,,,0.1,298 K,2.0-12.0,\,"(1H,13C)-heteronuclear multiple quantum coherence (HMQC) NMR",https://pubmed.ncbi.nlm.nih.gov/8226750/
@@ -123,7 +123,6 @@ Index,Protein Name,Species,pKa Classification,PDB,Chain,ResID in PDB,ResName,Exp
 123,CD2,Rat,Main,1CDC,A,72,ASP,4.14,,1HNG,,,,,,0.05,298 K,2.0-10.0,100-300 mM,NMR,https://pubs.acs.org/doi/abs/10.1021/bi992209z
 124,CD2,Rat,Main,1CDC,A,94,ASP,3.87,,1HNG,,,,,,0.04,298 K,2.0-10.0,100-300 mM,NMR,https://pubs.acs.org/doi/abs/10.1021/bi992209z
 125,CD2,Rat,Main,1CDC,A,99,GLU,4.25,,1HNG,,,,,,0.04,298 K,2.0-10.0,100-300 mM,NMR,https://pubs.acs.org/doi/abs/10.1021/bi992209z
-126,CD2,Rat,Main,1CDC,A,176,C-term,3.11,,1HNG,,,,,C/N-term,0.05,298 K,2.0-10.0,100 mM,NMR,https://pubs.acs.org/doi/abs/10.1021/bi992209z
 127,Chymotrypsinogen,Bovine,Main,1EX3,A,102,ASP,1.36,,,,"1YPH.C,2TGA.A",,,,0.03,298 K,,,1H NMR,https://pubs.acs.org/doi/abs/10.1021/bi00615a008
 128,Chymotrypsinogen,Bovine,Main,1EX3,A,194,ASP,2.29,,,,"1YPH.C,2TGA.A",,,,0.06,298 K,,,1H NMR,https://pubs.acs.org/doi/abs/10.1021/bi00615a008
 129,"Creatine Kinase, Mitochondrial",Human,Main,1QK1,A,278,CYS,5.6,,,,1I0E.A,,,,0.1,…,…,…,…,https://pubs.acs.org/doi/10.1021/acs.jcim.3c00004
@@ -135,13 +134,7 @@ Index,Protein Name,Species,pKa Classification,PDB,Chain,ResID in PDB,ResName,Exp
 135,Cytochrome C,Horse,Main,1HRC,A,33,HIS,6.4,,3NBS,,,,,,,303 K,3.0-11.0,0.1 M,NMR,https://pubs.acs.org/doi/abs/10.1021/bi00654a018
 136,Cytochrome C,Horse,Main,1HRC,A,67,TYR,11,,3NBS,,,,,,,303 K,3.0-11.0,0.1 M,NMR,https://pubs.acs.org/doi/abs/10.1021/bi00654a018
 137,Cytochrome C,Horse,Main,1HRC,A,79,LYS,9,,3NBS,,,,,,,303 K,3.0-11.0,0.1 M,NMR,https://pubs.acs.org/doi/abs/10.1021/bi00654a018
-138,DJ-1,Yeast,Main,4QYT,A,111,CYS,4.6,,,,"4GE0.A,4GE3.A,4XLL.A","4GE0.A,4GE3.A",,,0.04,\,7-Mar,\,absorption of the thiolate anion at 240 nm as a function of pH,https://doi.org/10.1111/febs.12004
-139,DJ-1,Yeast,Alt. pKa (mutant),4GE0,A,111,CYS,5.54,T114P,,,"4GE3.A,4QYT.A,4XLL.A","4GE3.A,4QYT.A",,,0.05,?,?,?,?,https://doi.org/10.1111/febs.12005
-140,DJ-1,Yeast,Alt. pKa (mutant),4GE3,A,111,CYS,5.23,T114V,,,"4GE0.A,4QYT.A,4XLL.A","4GE0.A,4QYT.A",,,0.08,?,,,,https://doi.org/10.1111/febs.12006
 141,DJ-1,Human,Main,1P5F,A,106,CYS,5.4,,,,"3CYF.A,3CZ9.A,3EZG.A,3F71.A,4XLL.A","3CYF.A,3CZ9.A,3EZG.A,3F71.A",,,0.1,303 K,,0.2 M,Spectrophotometric titration,https://pubs.acs.org/doi/10.1021/bi800282d
-142,DJ-1,Human,Alt. pKa (mutant),3F71,A,106,CYS,6.1,E18D,,,"1P5F.A,3CYF.A,3CZ9.A,3EZG.A,4XLL.A","1P5F.A,3CYF.A,3CZ9.A,3EZG.A",,,0.1,\,3.3-7.4,\,absorption of the thiolate anion at 240 nm,https://pubs.acs.org/doi/10.1021/bi800282d
-143,DJ-1,Human,Alt. pKa (mutant),3CYF,A,106,CYS,6.1,E18N,,,"1P5F.A,3CZ9.A,3EZG.A,3F71.A,4XLL.A","1P5F.A,3CZ9.A,3EZG.A,3F71.A",,,0.2,\,3.3-7.4,\,absorption of the thiolate anion at 240 nm,https://pubs.acs.org/doi/10.1021/bi800282d
-144,DJ-1,Human,Alt. pKa (mutant),3EZG,A,106,CYS,5.7,E18Q,,,"1P5F.A,3CYF.A,3CZ9.A,3F71.A,4XLL.A","1P5F.A,3CYF.A,3CZ9.A,3F71.A",,,0.1,\,3.3-7.4,\,absorption of the thiolate anion at 240 nm,https://pubs.acs.org/doi/10.1021/bi800282d
 145,DJ-1,Human,Alt. pKa (mutant),3CZ9,A,106,CYS,6.4,E18L,,,"1P5F.A,3CYF.A,3EZG.A,3F71.A","1P5F.A,3CYF.A,3EZG.A,3F71.A",,,0.1,\,3.3-7.4,\,absorption of the thiolate anion at 240 nm,https://pubs.acs.org/doi/10.1021/bi800282d
 146,DJ-1,Toxoplasma Gondii,Main,4XLL,A,104,CYS,5,,,,"1P5F.A,3CYF.A,3EZG.A,3F71.A,4GE0.A,4GE3.A,4QYT.A",,,,0.1,\,\,\,absorption of the thiolate anion at 240 nm,https://doi.org/10.1128/mbio.02189-16
 147,DNA Polymerase Lambda,Human,Main,1XSN,A,248,LYS,10.27,,1NZP,Not in PDB,,,,ResID NOT exist,0.14,298 K,7.0-10.5,100 mM,NMR,https://pubs.acs.org/doi/abs/10.1021/bi051856p

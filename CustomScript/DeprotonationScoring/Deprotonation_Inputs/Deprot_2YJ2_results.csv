@@ -1,0 +1,21 @@
+Residue,Chain,ResNum,pKa,Side_SASA,Total_SASA,Accessible,Deprotonated,Accessibility_Score,Warhead,Reactivity_Score_Protonated,Reactivity_Score_Deprotonated,Reactivity_Score,Combined_Score,Binary_Accessible,Binary_Reactivity_Protonated,Binary_Reactivity_Deprotonated,Binary_Orbital_Protonated,Binary_Orbital_Deprotonated,Binary_HSAB,Binary_Score_Protonated,Binary_Score_Deprotonated,Binary_Score_With_HSAB_Protonated,Binary_Score_With_HSAB_Deprotonated,Binary_Reactivity,Binary_Orbital,Binary_Score,Binary_Score_With_HSAB
+THR,A,42,-1,33.7,37.5,TRUE,n/a,1,Aliphatic imine (Schiff base former),0.503856908,0.731448908,0.731448908,0.731448908,1,0,1,1,1,1,0,1,0,1,1,1,1,1
+THR,A,94,-1,68.1,49.6,TRUE,n/a,1,Aliphatic imine (Schiff base former),0.503856908,0.731448908,0.731448908,0.731448908,1,0,1,1,1,1,0,1,0,1,1,1,1,1
+THR,A,110,-1,68.3,61.9,TRUE,n/a,1,Aliphatic imine (Schiff base former),0.503856908,0.731448908,0.731448908,0.731448908,1,0,1,1,1,1,0,1,0,1,1,1,1,1
+THR,A,128,-1,78.5,70.1,TRUE,n/a,1,Aliphatic imine (Schiff base former),0.503856908,0.731448908,0.731448908,0.731448908,1,0,1,1,1,1,0,1,0,1,1,1,1,1
+THR,A,175,-1,53.8,76.8,TRUE,n/a,1,Aliphatic imine (Schiff base former),0.503856908,0.731448908,0.731448908,0.731448908,1,0,1,1,1,1,0,1,0,1,1,1,1,1
+THR,A,219,-1,42.5,32.6,TRUE,n/a,1,Aliphatic imine (Schiff base former),0.503856908,0.731448908,0.731448908,0.731448908,1,0,1,1,1,1,0,1,0,1,1,1,1,1
+SER,A,4,-1,68.4,54.3,TRUE,n/a,1,Aliphatic imine (Schiff base former),0.5011193599999999,0.73136736,0.73136736,0.73136736,1,0,1,1,1,1,0,1,0,1,1,1,1,1
+SER,A,47,-1,39.6,31,TRUE,n/a,1,Aliphatic imine (Schiff base former),0.5011193599999999,0.73136736,0.73136736,0.73136736,1,0,1,1,1,1,0,1,0,1,1,1,1,1
+SER,A,85,-1,15.1,9.6,TRUE,n/a,1,Aliphatic imine (Schiff base former),0.5011193599999999,0.73136736,0.73136736,0.73136736,1,0,1,1,1,1,0,1,0,1,1,1,1,1
+SER,A,97,-1,81.1,66.1,TRUE,n/a,1,Aliphatic imine (Schiff base former),0.5011193599999999,0.73136736,0.73136736,0.73136736,1,0,1,1,1,1,0,1,0,1,1,1,1,1
+SER,A,105,-1,16.9,30,TRUE,n/a,1,Aliphatic imine (Schiff base former),0.5011193599999999,0.73136736,0.73136736,0.73136736,1,0,1,1,1,1,0,1,0,1,1,1,1,1
+SER,A,142,-1,39.1,43,TRUE,n/a,1,Aliphatic imine (Schiff base former),0.5011193599999999,0.73136736,0.73136736,0.73136736,1,0,1,1,1,1,0,1,0,1,1,1,1,1
+SER,A,157,-1,31,25.5,TRUE,n/a,1,Aliphatic imine (Schiff base former),0.5011193599999999,0.73136736,0.73136736,0.73136736,1,0,1,1,1,1,0,1,0,1,1,1,1,1
+SER,A,158,-1,31.4,24.3,TRUE,n/a,1,Aliphatic imine (Schiff base former),0.5011193599999999,0.73136736,0.73136736,0.73136736,1,0,1,1,1,1,0,1,0,1,1,1,1,1
+SER,A,174,-1,83.4,88.4,TRUE,n/a,1,Aliphatic imine (Schiff base former),0.5011193599999999,0.73136736,0.73136736,0.73136736,1,0,1,1,1,1,0,1,0,1,1,1,1,1
+SER,A,177,-1,81.8,81.8,TRUE,n/a,1,Aliphatic imine (Schiff base former),0.5011193599999999,0.73136736,0.73136736,0.73136736,1,0,1,1,1,1,0,1,0,1,1,1,1,1
+SER,A,213,-1,16.7,12.3,TRUE,n/a,1,Aliphatic imine (Schiff base former),0.5011193599999999,0.73136736,0.73136736,0.73136736,1,0,1,1,1,1,0,1,0,1,1,1,1,1
+CYS,A,25,12.5,20.1,13.6,TRUE,FALSE,1,Aliphatic imine (Schiff base former),0.59867936,0.731367364,0.731367364,0.731367364,1,1,1,1,1,0,1,1,0,0,1,1,1,0
+CYS,A,65,99.99,22.9,21.8,TRUE,FALSE,1,Aliphatic imine (Schiff base former),0.59867936,0.731367364,0.731367364,0.731367364,1,1,1,1,1,0,1,1,0,0,1,1,1,0
+CYS,A,98,99.99,43.9,52,TRUE,FALSE,1,Aliphatic imine (Schiff base former),0.59867936,0.731367364,0.731367364,0.731367364,1,1,1,1,1,0,1,1,0,0,1,1,1,0

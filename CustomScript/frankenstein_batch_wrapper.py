@@ -111,6 +111,8 @@ def run_wrapper(args):
         "step1_accessible_pass",
         "step2_reactivity_pass",
         "step3_orbital_pass",
+        "step5_deprotonation_pass",
+        "step5_status",
         "failed_step",
         "succeeded_steps",
     ]
@@ -138,6 +140,8 @@ def run_wrapper(args):
         "step1_accessible_pass",
         "step2_reactivity_pass",
         "step3_orbital_pass",
+        "step5_deprotonation_pass",
+        "step5_status",
         "failed_step",
         "succeeded_steps",
     ]
