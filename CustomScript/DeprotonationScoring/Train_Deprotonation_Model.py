@@ -27,7 +27,6 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, FunctionTransformer
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.model_selection import GroupShuffleSplit
 from scipy import stats
 from sklearn.metrics import matthews_corrcoef, confusion_matrix, roc_auc_score
 
@@ -192,59 +191,57 @@ def parse_pka_value(value) -> float:
 		return np.nan
 	
 def compute_sasa_freesasa(pdb_path: str, chain: str, resseq: int, resname: str) -> Optional[float]:
-    try:
-        import freesasa
-    except ImportError:
-        print("[sasa] freesasa not installed. Run: pip install freesasa")
-        return np.nan
+	try:
+		import freesasa
+	except ImportError:
+		print("[sasa] freesasa not installed. Run: pip install freesasa")
+		return np.nan
 
-    try:
-        structure = freesasa.Structure(pdb_path)
-        result = freesasa.calc(structure)
-        rsa = result.residueAreas()  # ← method on result, not module
+	try:
+		structure = freesasa.Structure(pdb_path)
+		result = freesasa.calc(structure)
+		rsa = result.residueAreas()  # method on result, not module
 
-        rows = []
-        for chain_id, residues in rsa.items():
-            for res_id, areas in residues.items():
-                res_num_str = re.sub(r'[^0-9-]', '', res_id.strip())
-                if not res_num_str:
-                    continue
-                r_resseq = int(res_num_str)
-                r_resname = areas.residueType.strip()
-                # relativeSideChain is 0-1, multiply by 100 to match Total-Side REL
-                side_rel = areas.relativeSideChain
-                if side_rel is None:
-                    side_rel = np.nan
-                else:
-                    side_rel = side_rel * 100.0
-                rows.append((chain_id, r_resseq, r_resname, side_rel))
+		rows = []
+		for chain_id, residues in rsa.items():
+			for res_id, areas in residues.items():
+				res_num_str = re.sub(r'[^0-9-]', '', res_id.strip())
+				if not res_num_str:
+					continue
+				r_resseq = int(res_num_str)
+				r_resname = areas.residueType.strip()
+				# relativeSideChain is 0-1, multiply by 100 to match Total-Side REL
+				side_rel = areas.relativeSideChain
+				side_rel = np.nan if side_rel is None else side_rel * 100.0
+				rows.append((chain_id, r_resseq, r_resname, side_rel))
 
-        sasa_df = pd.DataFrame(rows, columns=["chain", "resnum", "resname", "side_sasa"])
+		sasa_df = pd.DataFrame(rows, columns=["chain", "resnum", "resname", "side_sasa"])
 
-        pdb_base = os.path.splitext(pdb_path)[0]
-        out_path = f"{pdb_base}_sasa.csv"
-        sasa_df.to_csv(out_path, index=False)
-        print(f"[sasa] Saved computed SASA to {out_path}")
+		pdb_base = os.path.splitext(pdb_path)[0]
+		out_path = f"{pdb_base}_deprot_sasa.csv"
+		sasa_df.to_csv(out_path, index=False)
+		print(f"[sasa] Saved computed SASA to {out_path}")
 
-        match = sasa_df[
-            (sasa_df["chain"].astype(str) == str(chain)) &
-            (sasa_df["resnum"].astype(int) == int(resseq)) &
-            (sasa_df["resname"].str.upper() == resname.upper())
-        ]
-        if match.empty:
-            print(f"[sasa] Residue {chain}:{resname}:{resseq} not found after freesasa computation")
-            return np.nan
-        return float(match.iloc[0]["side_sasa"])
+		match = sasa_df[
+			(sasa_df["chain"].astype(str) == str(chain)) &
+			(sasa_df["resnum"].astype(int) == int(resseq)) &
+			(sasa_df["resname"].str.upper() == resname.upper())
+		]
+		if match.empty:
+			print(f"[sasa] Residue {chain}:{resname}:{resseq} not found after freesasa computation")
+			return np.nan
+		return float(match.iloc[0]["side_sasa"])
 
-    except Exception as exc:
-        print(f"[sasa] freesasa computation failed for {chain}:{resname}:{resseq}: {exc}")
-        return np.nan
+	except Exception as exc:
+		print(f"[sasa] freesasa computation failed for {chain}:{resname}:{resseq}: {exc}")
+		return np.nan
 
 
 def load_sasa_from_csv(pdb_path: str, chain: str, resseq: int, resname: str) -> Optional[float]:
     pdb_dir = os.path.dirname(pdb_path)
     pdb_base = os.path.splitext(os.path.basename(pdb_path))[0]
     candidates = [
+		os.path.join(pdb_dir, f"{pdb_base}_deprot_sasa.csv"),
         os.path.join(pdb_dir, f"{pdb_base}_sasa.csv"),
         os.path.join(pdb_dir, f"{pdb_base}_pdb_sasa.csv"),
         os.path.join(pdb_dir, "pdb_sasa.csv"),
@@ -327,6 +324,66 @@ def log1p_signed(x):
     """log1p for positive values, pass-through for negative (e.g. electrostatic potential)."""
     return np.where(x < 0, x, np.log1p(x))
 
+
+def safe_pearson(y_true, y_pred):
+	try:
+		if len(y_true) < 2 or np.allclose(y_true, y_true.iloc[0]) or np.allclose(y_pred, y_pred[0]):
+			return np.nan, np.nan
+		return stats.pearsonr(y_true, y_pred)
+	except Exception:
+		return np.nan, np.nan
+
+
+def safe_spearman(y_true, y_pred):
+	try:
+		if len(y_true) < 2 or np.allclose(y_true, y_true.iloc[0]) or np.allclose(y_pred, y_pred[0]):
+			return np.nan, np.nan
+		return stats.spearmanr(y_true, y_pred)
+	except Exception:
+		return np.nan, np.nan
+
+
+def safe_auc(y_true_bin, y_pred):
+	try:
+		if len(np.unique(y_true_bin)) < 2:
+			return np.nan
+		return roc_auc_score(y_true_bin, y_pred)
+	except Exception:
+		return np.nan
+
+
+def make_group_splits(groups, n_splits: int, shuffle_groups: bool, random_state: int):
+	group_series = pd.Series(groups).reset_index(drop=True)
+	group_counts = group_series.value_counts()
+	unique_groups = list(group_counts.index)
+	rng = np.random.default_rng(random_state)
+
+	if shuffle_groups:
+		random_tiebreak = {group: rng.random() for group in unique_groups}
+		ordered_groups = sorted(
+			unique_groups,
+			key=lambda group: (-group_counts[group], random_tiebreak[group]),
+		)
+	else:
+		ordered_groups = sorted(unique_groups, key=lambda group: (-group_counts[group], str(group)))
+
+	fold_group_lists = [[] for _ in range(n_splits)]
+	fold_sizes = np.zeros(n_splits, dtype=int)
+
+	for group in ordered_groups:
+		fold_idx = int(np.argmin(fold_sizes))
+		fold_group_lists[fold_idx].append(group)
+		fold_sizes[fold_idx] += int(group_counts[group])
+
+	splits = []
+	for fold_groups in fold_group_lists:
+		test_mask = group_series.isin(fold_groups).to_numpy()
+		test_idx = np.flatnonzero(test_mask)
+		train_idx = np.flatnonzero(~test_mask)
+		splits.append((train_idx, test_idx))
+
+	return splits
+
 def main():
 	parser = argparse.ArgumentParser(description="Train deprotonation probability model.")
 	parser.add_argument("pkadr_csv", help="Path to PKAD-R CSV")
@@ -334,6 +391,8 @@ def main():
 	parser.add_argument("--apbs-radius", type=float, default=12.0, help="APBS sphere radius")
 	parser.add_argument("--hbond-radius", type=float, default=6.0, help="H-bond search radius")
 	parser.add_argument("--ph", type=float, default=PHYSIOLOGIC_PH, help="Physiologic pH")
+	parser.add_argument("--shuffle-groups", action="store_true", help="Randomize group assignment before building folds")
+	parser.add_argument("--random-state", type=int, default=7, help="Random seed used when shuffling groups")
 	parser.add_argument("--model-out", default="deprot_xgb.json", help="Output model file")
 	args = parser.parse_args()
 
@@ -369,7 +428,8 @@ def main():
 	
 	feat_df = pd.DataFrame(feature_rows)
 	feat_df["label"] = labels.values
-	feat_df["pdb"] = df["pdb"].values  # for group splitting
+	feat_df["pdb"] = df["pdb"].values  # for grouped splitting
+	feat_df["row_id"] = np.arange(len(feat_df))
       
 	feature_cols = [
 		"ref_pka",
@@ -424,61 +484,135 @@ def main():
 		random_state=7,
 	)
 
-	gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=7)
-	train_idx, test_idx = next(gss.split(X, y, groups=df["pdb"]))
-	X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-	y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-      
-	# Save split feature caches
-	feat_df.iloc[train_idx].to_csv("deprot_xgb_train_features.csv", index=False)
-	feat_df.iloc[test_idx].to_csv("deprot_xgb_test_features.csv", index=False)
+	n_splits = 10
+	group_counts = df.groupby("pdb").size()
+	if group_counts.size < n_splits:
+		raise ValueError(
+			f"Need at least {n_splits} unique PDB groups for {n_splits}-fold CV; found {group_counts.size}."
+		)
+	if args.shuffle_groups:
+		print(f"[cv] Shuffling group assignment with random_state={args.random_state}")
+	else:
+		print("[cv] Using deterministic group assignment (no shuffle)")
 
-	print("Saved cached train/test feature CSVs")
+	output_dir = os.path.dirname(args.model_out) or "."
+	model_stem = os.path.splitext(os.path.basename(args.model_out))[0]
+	results_csv = os.path.join(output_dir, f"{model_stem}_cv_results.csv")
+	oof_csv = os.path.join(output_dir, f"{model_stem}_oof_predictions.csv")
 
-	pipeline = Pipeline(steps=[("preprocess", preprocessor), ("model", model)])
-	pipeline.fit(X_train, y_train)
+	splits = make_group_splits(feat_df["pdb"], n_splits, args.shuffle_groups, args.random_state)
+	fold_results = []
+	oof_rows = []
 
-	preds = pipeline.predict(X_test)
-	# --- Metrics --- #
-	rmse = math.sqrt(mean_squared_error(y_test, preds))
-	r2   = r2_score(y_test, preds)
-	mae  = np.mean(np.abs(y_test - preds))
+	for fold_num, (train_idx, test_idx) in enumerate(splits, start=1):
+		X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+		y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+		train_cache = os.path.join(output_dir, f"{model_stem}_fold{fold_num:02d}_train_features.csv")
+		test_cache = os.path.join(output_dir, f"{model_stem}_fold{fold_num:02d}_test_features.csv")
 
-	# Pearson and Spearman correlations
-	pearson_r,  pearson_p  = stats.pearsonr(y_test, preds)
-	spearman_r, spearman_p = stats.spearmanr(y_test, preds)
+		feat_df.iloc[train_idx].to_csv(train_cache, index=False)
+		feat_df.iloc[test_idx].to_csv(test_cache, index=False)
 
-	# Classification metrics at 0.5 threshold (protonated vs deprotonated)
-	y_test_bin = (y_test >= 0.5).astype(int)
-	preds_bin  = (preds  >= 0.5).astype(int)
-	mcc = matthews_corrcoef(y_test_bin, preds_bin)
-	auc = roc_auc_score(y_test_bin, preds)
-	tn, fp, fn, tp = confusion_matrix(y_test_bin, preds_bin).ravel()
+		pipeline = Pipeline(steps=[("preprocess", preprocessor), ("model", model)])
+		pipeline.fit(X_train, y_train)
+		preds = pipeline.predict(X_test)
+
+		rmse = math.sqrt(mean_squared_error(y_test, preds))
+		r2 = r2_score(y_test, preds)
+		mae = np.mean(np.abs(y_test - preds))
+		pearson_r, pearson_p = safe_pearson(y_test, preds)
+		spearman_r, spearman_p = safe_spearman(y_test, preds)
+		y_test_bin = (y_test >= 0.5).astype(int)
+		preds_bin = (preds >= 0.5).astype(int)
+		mcc = matthews_corrcoef(y_test_bin, preds_bin)
+		auc = safe_auc(y_test_bin, preds)
+		tn, fp, fn, tp = confusion_matrix(y_test_bin, preds_bin, labels=[0, 1]).ravel()
+
+		fold_results.append({
+			"fold": fold_num,
+			"train_samples": len(train_idx),
+			"test_samples": len(test_idx),
+			"rmse": rmse,
+			"mae": mae,
+			"r2": r2,
+			"pearson_r": pearson_r,
+			"pearson_p": pearson_p,
+			"spearman_r": spearman_r,
+			"spearman_p": spearman_p,
+			"auc_roc": auc,
+			"mcc": mcc,
+			"tn": tn,
+			"fp": fp,
+			"fn": fn,
+			"tp": tp,
+		})
+
+		fold_oof = feat_df.iloc[test_idx].copy()
+		fold_oof["fold"] = fold_num
+		fold_oof["prediction"] = preds
+		oof_rows.append(fold_oof)
+
+		print(f"\n{'='*50}")
+		print(f"  FOLD {fold_num:02d} / {n_splits}")
+		print(f"{'='*50}")
+		print(f"  Samples (train/test): {len(train_idx)} / {len(test_idx)}")
+		print(f"  Regression metrics:")
+		print(f"    RMSE:               {rmse:.4f}")
+		print(f"    MAE:                {mae:.4f}")
+		print(f"    R²:                 {r2:.4f}")
+		print(f"    Pearson r:          {pearson_r:.4f}  (p={pearson_p:.2e})")
+		print(f"    Spearman ρ:         {spearman_r:.4f}  (p={spearman_p:.2e})")
+		print(f"  Classification metrics (threshold=0.5):")
+		print(f"    AUC-ROC:            {auc:.4f}")
+		print(f"    MCC:                {mcc:.4f}")
+		print(f"    TP/TN/FP/FN:        {tp}/{tn}/{fp}/{fn}")
+
+	results_df = pd.DataFrame(fold_results)
+	results_df.to_csv(results_csv, index=False)
+	print(f"\nSaved fold metrics to {results_csv}")
+
+	oof_df = pd.concat(oof_rows, ignore_index=True).sort_values("row_id").reset_index(drop=True)
+	oof_df.to_csv(oof_csv, index=False)
+	print(f"Saved out-of-fold predictions to {oof_csv}")
+
+	oof_y = oof_df["label"]
+	oof_preds = oof_df["prediction"]
+	oof_rmse = math.sqrt(mean_squared_error(oof_y, oof_preds))
+	oof_r2 = r2_score(oof_y, oof_preds)
+	oof_mae = np.mean(np.abs(oof_y - oof_preds))
+	oof_pearson_r, oof_pearson_p = safe_pearson(oof_y, oof_preds)
+	oof_spearman_r, oof_spearman_p = safe_spearman(oof_y, oof_preds)
+	oof_y_bin = (oof_y >= 0.5).astype(int)
+	oof_preds_bin = (oof_preds >= 0.5).astype(int)
+	oof_mcc = matthews_corrcoef(oof_y_bin, oof_preds_bin)
+	oof_auc = safe_auc(oof_y_bin, oof_preds)
+	oof_tn, oof_fp, oof_fn, oof_tp = confusion_matrix(oof_y_bin, oof_preds_bin, labels=[0, 1]).ravel()
 
 	print(f"\n{'='*50}")
-	print(f"  MODEL EVALUATION")
+	print(f"  CROSS-VALIDATION SUMMARY")
 	print(f"{'='*50}")
-	print(f"  Samples (train/test): {len(X_train)} / {len(X_test)}")
-	print(f"")
+	print(f"  Folds:              {n_splits}")
+	print(f"  OOF samples:        {len(oof_df)}")
 	print(f"  Regression metrics:")
-	print(f"    RMSE:               {rmse:.4f}")
-	print(f"    MAE:                {mae:.4f}")
-	print(f"    R²:                 {r2:.4f}")
-	print(f"    Pearson r:          {pearson_r:.4f}  (p={pearson_p:.2e})")
-	print(f"    Spearman ρ:         {spearman_r:.4f}  (p={spearman_p:.2e})")
-	print(f"")
+	print(f"    RMSE:               {oof_rmse:.4f}")
+	print(f"    MAE:                {oof_mae:.4f}")
+	print(f"    R²:                 {oof_r2:.4f}")
+	print(f"    Pearson r:          {oof_pearson_r:.4f}  (p={oof_pearson_p:.2e})")
+	print(f"    Spearman ρ:         {oof_spearman_r:.4f}  (p={oof_spearman_p:.2e})")
 	print(f"  Classification metrics (threshold=0.5):")
-	print(f"    AUC-ROC:            {auc:.4f}")
-	print(f"    MCC:                {mcc:.4f}")
-	print(f"    TP/TN/FP/FN:        {tp}/{tn}/{fp}/{fn}")
+	print(f"    AUC-ROC:            {oof_auc:.4f}")
+	print(f"    MCC:                {oof_mcc:.4f}")
+	print(f"    TP/TN/FP/FN:        {oof_tp}/{oof_tn}/{oof_fp}/{oof_fn}")
 	print(f"{'='*50}\n")
 
- 	# --- Save models --- #
-	pipeline.named_steps["model"].save_model(args.model_out)
+	# --- Save final model fit on all data --- #
+	final_pipeline = Pipeline(steps=[("preprocess", preprocessor), ("model", model)])
+	final_pipeline.fit(X, y)
+	final_pipeline.named_steps["model"].save_model(args.model_out)
 	print(f"Saved XGBoost model (JSON) to {args.model_out}")
 
 	pkl_out = args.model_out.replace(".json", ".pkl")
-	joblib.dump(pipeline, pkl_out)
+	joblib.dump(final_pipeline, pkl_out)
 	print(f"Saved full pipeline (pkl)  to {pkl_out}")
 
 

@@ -135,7 +135,7 @@ def compute_sasa_freesasa(pdb_path: str, chain: str, resseq: int, resname: str) 
         sasa_df = pd.DataFrame(rows, columns=["chain", "resnum", "resname", "side_sasa"])
 
         pdb_base = os.path.splitext(pdb_path)[0]
-        out_path = f"{pdb_base}_sasa.csv"
+        out_path = f"{pdb_base}_deprot_sasa.csv"
         sasa_df.to_csv(out_path, index=False)
         print(f"[sasa] Saved computed SASA to {out_path}")
 
@@ -158,6 +158,7 @@ def load_sasa(pdb_path: str, chain: str, resseq: int, resname: str) -> Optional[
     pdb_dir = os.path.dirname(pdb_path)
     pdb_base = os.path.splitext(os.path.basename(pdb_path))[0]
     candidates = [
+        os.path.join(pdb_dir, f"{pdb_base}_deprot_sasa.csv"),
         os.path.join(pdb_dir, f"{pdb_base}_sasa.csv"),
         os.path.join(pdb_dir, f"{pdb_base}_pdb_sasa.csv"),
         os.path.join(pdb_dir, "pdb_sasa.csv"),
@@ -395,7 +396,7 @@ def run_analyze(args, pipeline):
     )
     # Use rank with min method so ties get the same rank number
     df_sorted["Ranked_Success_Deprotonated"] = (
-        df_sorted["_sort_prob"]
+        df_sorted["_sort_prob"].fillna(-1.0)
         .rank(method="dense", ascending=False)
         .astype(int)
     )
@@ -412,7 +413,7 @@ def run_analyze(args, pipeline):
     )
     # Rank within the full sorted order, ties get same rank
     df_sorted2["Ranked_Success_Reactivity"] = (
-        df_sorted2["_sort_rsd"]
+        df_sorted2["_sort_rsd"].fillna(-1.0)
         .rank(method="dense", ascending=False)
         .astype(int)
     )

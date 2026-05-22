@@ -930,7 +930,7 @@ def _compute_aa_reactivity_worker(args):
 # MAIN WORKFLOW
 # ============================================================================
 
-def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_types=3, n_workers=1, use_cache=True):
+def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_types=3, n_workers=1, use_cache=True, output_base_dir=None):
     """
     Main workflow: 
     1. Determine top N most reactive amino acid TYPES for the electrophile (quantum calculations)
@@ -948,7 +948,8 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
         use_cache: If True, use cached results; if False, force recalculation but still save to cache (default: True)
     """
     # Create output directory
-    output_dir = f"{output_prefix}_output"
+    output_dir_name = f"{output_prefix}_output"
+    output_dir = os.path.join(output_base_dir, output_dir_name) if output_base_dir else output_dir_name
     os.makedirs(output_dir, exist_ok=True)
     
     print("=" * 80)
@@ -1403,15 +1404,15 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
         hsab_class = warhead_data["hsab_class"]
         hsab_targets = warhead_data["hsab_targets"]
         
-        # Get union of top types from both protonation states for initial filtering
-        all_top_types = list(set(top_types_protonated + top_types_deprotonated))
-        filtered_nucleophiles = all_accessible[all_accessible["Residue"].isin(all_top_types)].copy()
+        # Keep all accessible nucleophiles so residues outside the top reactive types remain visible.
+        # The top-type lists are still used to set binary flags and binary scores.
+        filtered_nucleophiles = all_accessible.copy()
         
         if len(filtered_nucleophiles) == 0:
-            print(f"      ⚠️  No accessible nucleophiles match top {top_n_types} reactive types for this warhead")
+            print(f"      ⚠️  No accessible nucleophiles found for this warhead")
             continue
         
-        print(f"      Found {len(filtered_nucleophiles)} matching nucleophiles (union of protonated and deprotonated top types)")
+        print(f"      Using all {len(filtered_nucleophiles)} accessible nucleophiles for this warhead")
         
         # Convert scores to numeric, handling 'n/a' and other non-numeric values
         filtered_nucleophiles["Accessibility_Score"] = pd.to_numeric(
@@ -1532,7 +1533,7 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
             (filtered_nucleophiles["Binary_HSAB"] == 1)
         ).astype(int)
         
-        print(f"      Computed scores for {len(filtered_nucleophiles)} valid nucleophiles")
+        print(f"      Computed scores for {len(filtered_nucleophiles)} accessible nucleophiles")
         print(f"      Binary filters: Accessible={filtered_nucleophiles['Binary_Accessible'].sum()}, "
               f"Orbital_Prot={filtered_nucleophiles['Binary_Orbital_Protonated'].sum()}, "
               f"Orbital_Deprot={filtered_nucleophiles['Binary_Orbital_Deprotonated'].sum()}, "
@@ -1547,7 +1548,7 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
         accessible_nucleophiles = len(all_accessible)
         
         # Protonated statistics
-        after_reactivity_prot = len(filtered_nucleophiles[filtered_nucleophiles["Residue"].isin(top_types_protonated)])
+        after_reactivity_prot = len(all_accessible[all_accessible["Residue"].isin(top_types_protonated)])
         after_orbital_prot = (
             (filtered_nucleophiles["Residue"].isin(top_types_protonated)) &
             (filtered_nucleophiles["Binary_Orbital_Protonated"] == 1)
@@ -1560,7 +1561,7 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
         final_pass_prot = filtered_nucleophiles["Binary_Score_Protonated"].sum()
         
         # Deprotonated statistics
-        after_reactivity_deprot = len(filtered_nucleophiles[filtered_nucleophiles["Residue"].isin(top_types_deprotonated)])
+        after_reactivity_deprot = len(all_accessible[all_accessible["Residue"].isin(top_types_deprotonated)])
         after_orbital_deprot = (
             (filtered_nucleophiles["Residue"].isin(top_types_deprotonated)) &
             (filtered_nucleophiles["Binary_Orbital_Deprotonated"] == 1)
@@ -2549,7 +2550,7 @@ def get_csv_value(row, *column_names, default=None):
     return default
 
 
-def batch_process(csv_file, pdb_dir=None, pdb_download_dir=None, test_mode=False, n_workers=1, use_cache=True):
+def batch_process(csv_file, pdb_dir=None, pdb_download_dir=None, test_mode=False, n_workers=1, use_cache=True, output_dir=None):
     """
     Process multiple protein-electrophile pairs from a CSV file.
     
@@ -2589,6 +2590,9 @@ def batch_process(csv_file, pdb_dir=None, pdb_download_dir=None, test_mode=False
         print("📋 BATCH PROCESSING MODE")
     print("=" * 80)
     print(f"Reading from: {csv_file}\n")
+
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
     
     # Read CSV file
     try:
@@ -2765,7 +2769,15 @@ def batch_process(csv_file, pdb_dir=None, pdb_download_dir=None, test_mode=False
         
         # Run Frankenstein for this row
         try:
-            result = main(pdb_path_to_use, electrophile_smiles, name, top_n_types, n_workers, use_cache)
+            result = main(
+                pdb_path_to_use,
+                electrophile_smiles,
+                name,
+                top_n_types,
+                n_workers,
+                use_cache,
+                output_base_dir=output_dir,
+            )
             if result is not None:
                 # Extract results from dictionary
                 filter_stats = result["filter_statistics"]
@@ -2837,7 +2849,7 @@ def batch_process(csv_file, pdb_dir=None, pdb_download_dir=None, test_mode=False
     
     # Generate batch statistics CSV
     if len(batch_results) > 0:
-        batch_csv_path = os.path.join(os.path.dirname(csv_file), "batch_filtering_statistics.csv")
+        batch_csv_path = os.path.join(output_dir, "batch_filtering_statistics.csv") if output_dir else os.path.join(os.path.dirname(csv_file), "batch_filtering_statistics.csv")
         generate_batch_statistics_csv(batch_results, batch_csv_path, test_mode)
     
     # Print summary
@@ -2855,6 +2867,15 @@ def batch_process(csv_file, pdb_dir=None, pdb_download_dir=None, test_mode=False
 # ============================================================================
 
 if __name__ == "__main__":
+    # Normalize argv to avoid issues with trailing CR/LF from Windows-generated scripts
+    sys.argv = [a.rstrip('\r\n') for a in sys.argv]
+
+    # Diagnostic output to help identify which copy of the script is executed
+    try:
+        print(f"FRANKENSTEIN_EXECUTABLE: {os.path.abspath(__file__)}")
+        print(f"FRANKENSTEIN_ARGV: {sys.argv}")
+    except Exception:
+        pass
     # Check for batch mode or test mode
     if len(sys.argv) >= 2 and sys.argv[1] in ['--batch', '-b', '--test', '-test']:
         if len(sys.argv) < 3:
@@ -2884,6 +2905,7 @@ if __name__ == "__main__":
             print("Options:")
             print("  --pdb-dir <dir>            Directory containing PDB files (prepended to paths in CSV)")
             print("  --pdb-download-dir <dir>   Directory to download missing PDB files")
+            print("  --out-dir <dir>            Directory for batch/test outputs")
             print("  --workers N, -j N          Number of parallel workers for calculations (default: 1)")
             print("  --no-cache                 Force recalculation (ignore cache, but still save results)")
             print()
@@ -2898,6 +2920,7 @@ if __name__ == "__main__":
         csv_file = sys.argv[2]
         pdb_dir = None
         pdb_download_dir = None
+        output_dir = None
         n_workers = 1  # default sequential
         use_cache = True  # default use cache
         
@@ -2913,6 +2936,12 @@ if __name__ == "__main__":
                     print(f"Creating PDB download directory: {pdb_download_dir}")
                     os.makedirs(pdb_download_dir, exist_ok=True)
                 i += 2
+            elif sys.argv[i] == '--out-dir' and i + 1 < len(sys.argv):
+                output_dir = sys.argv[i + 1]
+                if not os.path.exists(output_dir):
+                    print(f"Creating batch output directory: {output_dir}")
+                    os.makedirs(output_dir, exist_ok=True)
+                i += 2
             elif sys.argv[i] in ['--workers', '-j'] and i + 1 < len(sys.argv):
                 n_workers = int(sys.argv[i + 1])
                 i += 2
@@ -2923,7 +2952,7 @@ if __name__ == "__main__":
                 print(f"Unknown argument: {sys.argv[i]}")
                 sys.exit(1)
         
-        batch_process(csv_file, pdb_dir, pdb_download_dir, test_mode, n_workers, use_cache)
+        batch_process(csv_file, pdb_dir, pdb_download_dir, test_mode, n_workers, use_cache, output_dir)
     
     # Single mode
     elif len(sys.argv) >= 3:
@@ -2933,7 +2962,7 @@ if __name__ == "__main__":
         top_n_types = int(sys.argv[4]) if len(sys.argv) > 4 else 3
         n_workers = 1  # default sequential
         use_cache = True  # default use cache
-        
+        output_dir = None
         # Check for --workers or -j flag and --no-cache flag
         i = 5
         while i < len(sys.argv):
@@ -2943,6 +2972,11 @@ if __name__ == "__main__":
             elif sys.argv[i] == '--no-cache':
                 use_cache = False
                 i += 1
+            elif sys.argv[i] == '--out-dir' and i + 1 < len(sys.argv):
+                output_dir = sys.argv[i + 1]
+                if not os.path.exists(output_dir):
+                    os.makedirs(output_dir, exist_ok=True)
+                i += 2
             else:
                 i += 1
         
@@ -2950,7 +2984,7 @@ if __name__ == "__main__":
             print(f"❌ Error: PDB file not found: {pdb_file}")
             sys.exit(1)
         
-        main(pdb_file, electrophile_smiles, output_prefix, top_n_types, n_workers, use_cache)
+        main(pdb_file, electrophile_smiles, output_prefix, top_n_types, n_workers, use_cache, output_base_dir=output_dir)
     
     # No valid arguments - show help
     else:

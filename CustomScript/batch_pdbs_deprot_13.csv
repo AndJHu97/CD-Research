@@ -1,0 +1,10 @@
+name,protein pdb,electrophile_smiles,LigID,top n types,Residue,ResNum,Chain
+3C9W-HMY,3C9W,,HMY,3,Cys,164,A
+3HD3-25B,3HD3,C(=C/c1ccccc1S(=O)(=O))\[C@@H](NC(=O)C1CCCCC1=O)c1ccc(Cl)cc1,,3,Cys,25,A
+3O6T-PX5,3O6T,,PX5,3,Cys,37,A
+3SVV-VSP,3SVV,O=S(=O)(Nc1cccc(c1)Cc3nn(c2ncnc(c23)N)C(C)C)C=C,,3,Cys,338,A
+3SZ9-I3E,3SZ9,CCCc1ccc(C(=O)C=C)cc1,,3,Cys,302,A
+3SZB-I1E,3SZB,[H]c1c([H])c([H])c(C(=O)C([H])=C([H])[H])c([H])c1[H],,3,Cys,243,A
+3T9T-IAQ,3T9T,,IAQ,3,Cys,442,A
+3V4J-PQR,3V4J,O=NN(c1cc2c(cc1)C(=O)C(=O)2)C,,3,Cys,308,A
+3W2P-W2P,3W2P,[H]c1nc(N([H])c2c([H])c([H])c(Oc3c([H])c([H])c([H])c(C(F)(F)F)c3[H])c(Cl)c2[H])c2c(n1)c([H])c([H])n2C([H])([H])C([H])([H])N([H])C(=O)C([H])=C([H])C([H])([H])N(C([H])([H])[H])C([H])([H])[H],,3,Cys,797,A

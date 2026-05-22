@@ -1,0 +1,10 @@
+name,protein pdb,electrophile_smiles,LigID,top n types,Residue,ResNum,Chain
+5C91-4YU,5C91,,4YU,3,Cys,627,A
+5DAF-58E,5DAF,[H]OC1=C(C#N)C([H])([H])[C@]2(C([H])([H])[H])c3nn(C([H])([H])[H])c(-c4c([H])nc([H])c([H])c4[H])c3C([H])([H])C([H])([H])[C@@]2([H])[C@]1([H])C([H])([H])[H],,3,Cys,151,A
+5DP4-5E8,5DP4,,5.00E+08,3,Cys,147,A
+5DP5-5E9,5DP5,,5.00E+09,3,Cys,147,A
+5DP7-5EC,5DP7,,5EC,3,Cys,147,A
+5DP8-5ED,5DP8,,5ED,3,Cys,147,A
+5DP9-5EX,5DP9,,5EX,3,Cys,147,A
+5DPA-5F2,5DPA,,5F2,3,Cys,147,A
+5F2E-5UT,5F2E,,5UT,3,Cys,12,A

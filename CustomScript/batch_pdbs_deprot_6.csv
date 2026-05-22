@@ -1,0 +1,10 @@
+name,protein pdb,electrophile_smiles,LigID,top n types,Residue,ResNum,Chain
+2R6N-CKE,2R6N,[H]c1c([H])c(C([H])([H])c2c([H])c3c([H])nc(C([H])([H])C#N)nc3n2C2([H])C([H])([H])C([H])([H])C([H])([H])C([H])([H])C2([H])[H])c([H])c([H])c1N1C([H])([H])C([H])([H])N(C([H])([H])[H])C([H])([H])C1([H])[H],,3,Cys,25,A
+2XU1-424,2XU1,N#CC1(N([H])C(=O)[C@@]2([H])N(C(=O)C3(c4c([H])c([H])c(Cl)c([H])c4[H])C([H])([H])C3([H])[H])C([H])([H])[C@]([H])(S(=O)(=O)c3c([H])c([H])c([H])c([H])c3Cl)C2([H])[H])C([H])([H])C1([H])[H],,3,Cys,25,A
+2XU4-DJT,2XU4,N#CC1(N([H])C(=O)[C@@]2([H])N(C(=O)C3(c4c([H])c([H])c(F)c([H])c4[H])C([H])([H])C3([H])[H])C([H])([H])[C@]([H])(S(=O)(=O)c3c([H])c([H])c([H])c([H])c3Cl)C2([H])[H])C([H])([H])C1([H])[H],,3,Cys,25,A
+2XU5-XU5,2XU5,N#CC1(N([H])C(=O)[C@@]2([H])N(C(=O)C3(c4c([H])c([H])c(C([H])([H])[H])c([H])c4[H])C([H])([H])C3([H])[H])C([H])([H])[C@]([H])(S(=O)(=O)c3c([H])c([H])c([H])c([H])c3Cl)C2([H])[H])C([H])([H])C1([H])[H],,3,Cys,25,A
+2YJ2-YJ2,2YJ2,N#CC1(N([H])C(=O)[C@@]2([H])N(C(=O)C3(c4c([H])c([H])c(Br)c([H])c4[H])C([H])([H])C3([H])[H])C([H])([H])[C@]([H])(S(=O)(=O)c3c([H])c([H])c([H])c([H])c3Cl)C2([H])[H])C([H])([H])C1([H])[H],,3,Cys,25,A
+2YJ8-YJ8,2YJ8,N#CC1(N([H])C(=O)[C@@]2([H])N(C(=O)C3(c4c([H])c([H])c(I)c([H])c4[H])C([H])([H])C3([H])[H])C([H])([H])[C@]([H])(S(=O)(=O)c3c([H])c([H])c([H])c([H])c3Cl)C2([H])[H])C([H])([H])C1([H])[H],,3,Cys,25,A
+2YJ9-YJ9,2YJ9,N#CC1(N([H])C(=O)[C@@]2([H])N(C(=O)C3(c4c([H])c([H])c(C(F)(F)F)c([H])c4[H])C([H])([H])C3([H])[H])C([H])([H])[C@]([H])(S(=O)(=O)c3c([H])c([H])c([H])c([H])c3Cl)C2([H])[H])C([H])([H])C1([H])[H],,3,Cys,25,A
+3HHA-NOW,3HHA,N#CC([H])([H])N([H])C(=O)[C@@]([H])(N([H])C(=O)c1c([H])c(C(C([H])([H])[H])(C([H])([H])[H])C([H])([H])[H])nn1C([H])([H])[H])C([H])([H])c1c([H])c([H])c([H])c(C([H])([H])[H])c1[H],,3,Cys,25,A
+3HWN-BD3,3HWN,[H]/N=C(/[H])c1nnc(-c2c([H])c([H])c([H])c(C([H])([H])[C@@]([H])(C(=O)N([H])C([H])([H])C#N)N([H])C(=O)c3c([H])c(C(C([H])([H])[H])(C([H])([H])[H])C([H])([H])[H])nn3C([H])([H])[H])c2[H])o1,,3,Cys,25,A

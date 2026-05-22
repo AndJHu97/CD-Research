@@ -1,0 +1,10 @@
+name,protein pdb,electrophile_smiles,LigID,top n types,Residue,ResNum,Chain
+1BMQ-MNO,1BMQ,,MNO,3,Cys,285,A
+1ME3-P10,1ME3,O=CC(=O)[C@@]([H])(N([H])C(=O)[C@@]([H])(N([H])C(=O)OC([H])([H])c1c([H])nc([H])c([H])c1[H])C([H])([H])c1c([H])c([H])c([H])c([H])c1[H])C([H])([H])C([H])([H])c1c([H])c([H])c([H])c([H])c1[H],,3,Cys,25,A
+1NQC-C4P,1NQC,,C4P,3,Cys,25,A
+1Q6K-TCO,1Q6K,,TCO,3,Cys,25,A
+1RE1-NA3,1RE1,,NA3,3,Cys,285,A
+1RHM-NA4,1RHM,,NA4,3,Cys,285,A
+1RWN-4QB,1RWN,,4QB,3,Cys,285,A
+1RWP-HQC,1RWP,,HQC,3,Cys,285,A
+1RWX-YBH,1RWX,,YBH,3,Cys,285,A

@@ -1,0 +1,10 @@
+name,protein pdb,electrophile_smiles,LigID,top n types,Residue,ResNum,Chain
+1NLJ-2CA,1NLJ,,2CA,3,Cys,25,A
+1RHJ-PZN,1RHJ,,PZN,3,Cys,285,A
+1TU6-FSP,1TU6,,FSP,3,Cys,139,A
+1YT7-3FC,1YT7,,3FC,3,Cys,25,A
+2BDL-4PR,2BDL,O=C(C(=O)N([H])[C@@H](c1ccccc1)C)[C@@H](N([H])C(=O)OC(C)(C)C)CC(C)C,,3,Cys,25,A
+2R9F-K2Z,2R9F,,K2Z,3,Cys,115,A
+2XM7-34H,2XM7,[H]OC(=O)C(=O)C([H])([H])c1c([H])c([H])c(O[H])c([H])c1[H],,3,Cys,215,A
+3H0E-H0E,3H0E,O=C1c2cc(S(=O)(=O)N3CCC[C@@H]3COc3ccccc3)ccc2N2CC(C)(C)CN=C21,,3,Cys,163,A
+4L1O-1VL,4L1O,O=C1C(=O)N(CC2CCN(Cc3ccc4c(c3)OCO4)CC2)c2ccccc21,,3,Cys,243,A

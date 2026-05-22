@@ -1,5 +1,7 @@
 import os
 import subprocess
+import re
+import importlib
 import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdFreeSASA
@@ -47,7 +49,7 @@ def estimate_electrophile_sasa(smiles):
     return sasa
 
 def run_freesasa(pdb_path):
-    """Run FreeSASA and save output to organized directory."""
+    """Run FreeSASA via Python API and save RSA-style output to organized directory."""
     # Create sasa_output directory in the same location as the PDB file
     pdb_dir = os.path.dirname(os.path.abspath(pdb_path))
     sasa_output_dir = os.path.join(pdb_dir, "sasa_output")
@@ -56,7 +58,30 @@ def run_freesasa(pdb_path):
     # Save .rsa file in the sasa_output directory
     pdb_basename = os.path.basename(pdb_path)
     rsa_file = os.path.join(sasa_output_dir, os.path.splitext(pdb_basename)[0] + "_sasa.rsa")
-    subprocess.run(["freesasa", pdb_path, "--format=rsa", f"--output={rsa_file}"], check=True)
+
+    try:
+        freesasa = importlib.import_module("freesasa")
+    except ImportError as exc:
+        raise FileNotFoundError("freesasa Python package not installed") from exc
+
+    structure = freesasa.Structure(pdb_path)
+    result = freesasa.calc(structure)
+    residue_areas = result.residueAreas()
+
+    with open(rsa_file, "w") as handle:
+        for chain_id, residues in residue_areas.items():
+            for res_id, areas in residues.items():
+                res_num_match = re.search(r"-?\d+", str(res_id))
+                res_num = res_num_match.group(0) if res_num_match else str(res_id).strip()
+                res_name = str(getattr(areas, "residueType", "UNK")).strip().upper()
+                total_sasa = float(getattr(areas, "total", 0.0) or 0.0)
+                side_sasa = float(getattr(areas, "sideChain", 0.0) or 0.0)
+                chain_str = str(chain_id).strip() if str(chain_id).strip() else "_"
+                # Keep token positions compatible with parse_rsa_file.
+                handle.write(
+                    f"RES {res_name} {chain_str} {res_num} ABS {total_sasa:.2f} REL {side_sasa:.2f}\n"
+                )
+
     return rsa_file
 
 def run_propka(pdb_path):

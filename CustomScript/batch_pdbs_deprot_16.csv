@@ -1,0 +1,10 @@
+name,protein pdb,electrophile_smiles,LigID,top n types,Residue,ResNum,Chain
+4PNC-7NP,4PNC,O=C1CC(=C)c2cc(OC)ccc21,,3,Cys,59,A
+4QPS-37Q,4QPS,,37Q,3,Cys,909,A
+4US2-L7S,4US2,O=C2N(C(=O)C=C2c1cccc(C(=O)N)c1)CC,,3,Cys,118,R
+4WVF-K76,4WVF,,K76,3,Cys,539,C
+4XCU-40M,4XCU,[H]c1c([H])c(N([H])C(=O)C([H])=C([H])[H])c(N([H])c2nc([H])c3c([H])c(-c4c(Cl)c(OC([H])([H])[H])c([H])c(OC([H])([H])[H])c4[H])c([H])c([H])c3n2)c([H])c1[H],,3,Cys,552,A
+4YHF-4C9,4YHF,O=C(/C(=C\CC(C)(C)C)C#N)N1CCC[C@@H](c2ccc(F)cc2F)C1,,3,Cys,481,A
+4YRT-781,4YRT,O=C(Nc2cc1cccc(O)c1cc2)C=C,,3,Cys,365,A
+4ZZM-CQ6,4ZZM,C=C[S](=O)(=O)N1CCc2cnc(NC3CCOCC3)nc2C1,,3,Cys,166,A
+4ZZO-CQ3,4ZZO,C=CC(=O)Nc1ccccc1Nc2nc(NC3CCOCC3)ncc2Cl,,3,Cys,166,A
