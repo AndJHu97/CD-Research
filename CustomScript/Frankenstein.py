@@ -574,7 +574,7 @@ def identify_accessible_nucleophiles(pdb_path):
     Uses functions from highlight_nucleophiles_adv_2.py.
     
     Returns:
-        DataFrame with columns: Residue, Chain, ResNum, pKa, Side_SASA, Total_SASA,
+        DataFrame with columns: Residue, Chain, ResNum, pKa, Abs_Side_SASA, Rel_Side_SASA,
                                 Accessible, Deprotonated, Score
     """
     print("🔬 Running FreeSASA and PROPKA...")
@@ -619,18 +619,18 @@ def identify_accessible_nucleophiles(pdb_path):
     total_residues_in_pdb = len(exposure)
 
     rows = []
-    for (resname, chain, resnum), (total_sasa, side_sasa) in exposure.items():
+    for (resname, chain, resnum), (abs_side_sasa, rel_side_sasa) in exposure.items():
         if resname not in PKA_THRESHOLDS:
             continue
         pKa = pka_data.get((resname, chain, resnum), -1.0)
-        acc, dep, score = hn_adv.score_druggability(pKa, side_sasa, resname)
+        acc, dep, score = hn_adv.score_druggability(pKa, rel_side_sasa, resname)
         rows.append({
             "Residue": resname,
             "Chain": chain,
             "ResNum": resnum,
             "pKa": pKa,
-            "Side_SASA": side_sasa,
-            "Total_SASA": total_sasa,
+            "Abs_Side_SASA": abs_side_sasa,
+            "Rel_Side_SASA": rel_side_sasa,
             "Accessible": acc,
             "Deprotonated": dep,
             "Accessibility_Score": 1.0 if acc else 0.0  # Use only accessibility (ignore deprotonation)
@@ -2979,12 +2979,19 @@ if __name__ == "__main__":
                 i += 2
             else:
                 i += 1
-        
-        if not os.path.exists(pdb_file):
+
+        resolved_pdb_file = pdb_file
+        if not os.path.exists(resolved_pdb_file):
+            repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            resolved_candidate = find_pdb_file(pdb_file, repo_root)
+            if resolved_candidate is not None:
+                resolved_pdb_file = resolved_candidate
+
+        if not os.path.exists(resolved_pdb_file):
             print(f"❌ Error: PDB file not found: {pdb_file}")
             sys.exit(1)
-        
-        main(pdb_file, electrophile_smiles, output_prefix, top_n_types, n_workers, use_cache, output_base_dir=output_dir)
+
+        main(resolved_pdb_file, electrophile_smiles, output_prefix, top_n_types, n_workers, use_cache, output_base_dir=output_dir)
     
     # No valid arguments - show help
     else:

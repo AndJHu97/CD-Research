@@ -74,12 +74,13 @@ def run_freesasa(pdb_path):
                 res_num_match = re.search(r"-?\d+", str(res_id))
                 res_num = res_num_match.group(0) if res_num_match else str(res_id).strip()
                 res_name = str(getattr(areas, "residueType", "UNK")).strip().upper()
-                total_sasa = float(getattr(areas, "total", 0.0) or 0.0)
-                side_sasa = float(getattr(areas, "sideChain", 0.0) or 0.0)
+                side_abs = float(getattr(areas, "sideChain", 0.0) or 0.0)
+                side_rel = getattr(areas, "relativeSideChain", 0.0)
+                side_rel = 0.0 if side_rel is None else float(side_rel) * 100.0
                 chain_str = str(chain_id).strip() if str(chain_id).strip() else "_"
                 # Keep token positions compatible with parse_rsa_file.
                 handle.write(
-                    f"RES {res_name} {chain_str} {res_num} ABS {total_sasa:.2f} REL {side_sasa:.2f}\n"
+                    f"RES {res_name} {chain_str} {res_num} ABS {side_abs:.2f} REL {side_rel:.2f}\n"
                 )
 
     return rsa_file
@@ -135,11 +136,11 @@ def parse_rsa_file(rsa_file):
                 chain = parts[2]
                 resnum = parts[3]
                 try:
-                    total_sasa = float(parts[5]) if parts[5] != 'N/A' else -1.0
-                    side_sasa = float(parts[7]) if parts[7] != 'N/A' else -1.0
+                    abs_side_sasa = float(parts[5]) if parts[5] != 'N/A' else -1.0
+                    rel_side_sasa = float(parts[7]) if parts[7] != 'N/A' else -1.0
                 except ValueError:
-                    total_sasa, side_sasa = -1.0, -1.0
-                exposure[(resname, chain, resnum)] = (total_sasa, side_sasa)
+                    abs_side_sasa, rel_side_sasa = -1.0, -1.0
+                exposure[(resname, chain, resnum)] = (abs_side_sasa, rel_side_sasa)
     return exposure
 
 def parse_propka_file(path):
@@ -154,12 +155,12 @@ def parse_propka_file(path):
                     continue
     return pka_data
 
-def score_druggability(pKa, side_sasa, resname):
-    if side_sasa == -1.0:
+def score_druggability(pKa, rel_side_sasa, resname):
+    if rel_side_sasa == -1.0:
         return "n/a", "n/a", "n/a"
 
     sasa_cutoff = SASA_CUTOFFS.get(resname, 50.0)  # default cutoff 50 Å²
-    is_accessible = side_sasa >= sasa_cutoff
+    is_accessible = rel_side_sasa >= sasa_cutoff
     is_deprotonated = resname in PKA_THRESHOLDS and pKa < PKA_THRESHOLDS[resname]
 
     if pKa == -1.0:
@@ -184,14 +185,14 @@ def main(pdb_path, smiles=None):
     pka_data = parse_propka_file(pka_file)
 
     rows = []
-    for (resname, chain, resnum), (total_sasa, side_sasa) in exposure.items():
+    for (resname, chain, resnum), (abs_side_sasa, rel_side_sasa) in exposure.items():
         if resname not in PKA_THRESHOLDS:
             continue
         pKa = pka_data.get((resname, chain, resnum), -1.0)
-        acc, dep, score = score_druggability(pKa, side_sasa, resname)
+        acc, dep, score = score_druggability(pKa, rel_side_sasa, resname)
         rows.append({
             "Residue": resname, "Chain": chain, "ResNum": resnum,
-            "pKa": pKa, "Side_SASA": side_sasa, "Total_SASA": total_sasa,
+            "pKa": pKa, "Abs_Side_SASA": abs_side_sasa, "Rel_Side_SASA": rel_side_sasa,
             "Accessible": acc, "Deprotonated": dep, "Score": score
         })
 
