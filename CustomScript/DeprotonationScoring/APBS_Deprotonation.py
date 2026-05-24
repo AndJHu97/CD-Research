@@ -264,7 +264,7 @@ def clean_pdb_for_pdb2pqr(pdb_path, out_path):
 # pdb2pqr: assign protonation states
 # ---------------------------------------------------------------------------
 
-def run_pdb2pqr(pdb_path, pqr_path, ph=7.4, force_field="AMBER"):
+def run_pdb2pqr(pdb_path, pqr_path, ph=7.4, force_field="AMBER", timeout=600):
     """
     Runs pdb2pqr to assign protonation states.
     First tries with PROPKA at the given pH.
@@ -288,7 +288,7 @@ def run_pdb2pqr(pdb_path, pqr_path, ph=7.4, force_field="AMBER"):
     ]
     print(f"\n[pdb2pqr] Running with PROPKA at pH {ph}...")
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         if result.returncode == 0:
             print(f"[pdb2pqr] Success → {pqr_path}")
             return True
@@ -297,7 +297,7 @@ def run_pdb2pqr(pdb_path, pqr_path, ph=7.4, force_field="AMBER"):
         print("[pdb2pqr] ERROR: pdb2pqr not found. Install with: pip install pdb2pqr")
         return False
     except subprocess.TimeoutExpired:
-        print("[pdb2pqr] ERROR: timed out after 120s")
+        print(f"[pdb2pqr] ERROR: timed out after {timeout}s")
         return False
 
    # Attempt 2: No PROPKA, just standard protonation
@@ -310,7 +310,7 @@ def run_pdb2pqr(pdb_path, pqr_path, ph=7.4, force_field="AMBER"):
     ]
     print(f"[pdb2pqr] Running without PROPKA (physiologic defaults)...")
     try:
-        result = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=timeout)
         if result.returncode == 0:
             print(f"[pdb2pqr] Success with physiologic defaults → {pqr_path}")
             return True
@@ -338,7 +338,7 @@ def run_pdb2pqr(pdb_path, pqr_path, ph=7.4, force_field="AMBER"):
 
     print(f"[pdb2pqr] Using cleaned structure: {cleaned}")
     try:
-        result = subprocess.run(cmd_stripped, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(cmd_stripped, capture_output=True, text=True, timeout=timeout)
         if result.returncode == 0:
             print(f"[pdb2pqr] Success after stripping → {pqr_path}")
             return True
@@ -489,7 +489,7 @@ quit
 # APBS execution
 # ---------------------------------------------------------------------------
 
-def run_apbs(apbs_input_path, work_dir):
+def run_apbs(apbs_input_path, work_dir, timeout=900):
     """Runs APBS. Returns True on success."""
 
     # Running based on this APBS input file, with the working directory set to where the input is located.
@@ -499,7 +499,7 @@ def run_apbs(apbs_input_path, work_dir):
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True,
-            timeout=300, cwd=work_dir
+            timeout=timeout, cwd=work_dir
         )
         if result.returncode != 0:
             print(f"[apbs] STDERR:\n{result.stderr[-3000:]}")
@@ -510,7 +510,7 @@ def run_apbs(apbs_input_path, work_dir):
         print("[apbs] ERROR: apbs not found. Install with: conda install -c conda-forge apbs")
         return False
     except subprocess.TimeoutExpired:
-        print("[apbs] ERROR: timed out after 300s")
+        print(f"[apbs] ERROR: timed out after {timeout}s")
         return False
 
 
@@ -759,7 +759,9 @@ def extract_and_renumber_model1(pdb_path: str, out_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 def run_apbs_site_analysis(pdb_path, residue_spec, radius=8.0, ph=7.4,
-                            work_dir=None, keep_files=False):
+                            work_dir=None, keep_files=False,
+                            pdb2pqr_timeout=600, apbs_timeout=900,
+                            reuse_existing=False):
     """
     Full pipeline:
       1. Parse residue spec and locate nucleophilic atom
@@ -789,12 +791,15 @@ def run_apbs_site_analysis(pdb_path, residue_spec, radius=8.0, ph=7.4,
     print(f"[setup] Sphere radius: {radius} Å  |  pH: {ph}")
 
     # --- 2. Parse PDB and find nucleophilic atom ---
-    # --- 2. Parse PDB and find nucleophilic atom ---
     # Extract model 1 first so atom lookup and coordinates match what pdb2pqr will see
-    clean_pdb = pdb_path.replace(".pdb", "_model1.pdb")
-    if not os.path.exists(clean_pdb):
-        extract_and_renumber_model1(pdb_path, clean_pdb)
-        print(f"[preprocess] Extracted MODEL 1 → {clean_pdb}")
+    base, ext = os.path.splitext(pdb_path)
+    if base.endswith("_model1"):
+        clean_pdb = pdb_path  # already extracted, avoid double _model1
+    else:
+        clean_pdb = base + "_model1.pdb"
+        if not os.path.exists(clean_pdb):
+            extract_and_renumber_model1(pdb_path, clean_pdb)
+            print(f"[preprocess] Extracted MODEL 1 → {clean_pdb}")
     atoms = parse_pdb_atoms(clean_pdb)
     if not atoms:
         print(f"ERROR: No ATOM records found in {pdb_path}")
@@ -839,15 +844,18 @@ def run_apbs_site_analysis(pdb_path, residue_spec, radius=8.0, ph=7.4,
 
     # --- 4. pdb2pqr on full protein ---
     # pdb2pqr needs the full protein for accurate PROPKA titration
-    success = run_pdb2pqr(clean_pdb, pqr_path, ph=ph)
-    if not success:
-        print("\n[fallback] pdb2pqr failed. Attempting to continue with raw PDB...")
-        print("  WARNING: No partial charges — APBS output will be unreliable.")
-        print("  Install pdb2pqr:  pip install pdb2pqr")
-        sys.exit(1)
+    if reuse_existing and os.path.exists(pqr_path):
+        print(f"[pdb2pqr] Reusing cached PQR: {pqr_path}")
+    else:
+        success = run_pdb2pqr(clean_pdb, pqr_path, ph=ph, timeout=pdb2pqr_timeout)
+        if not success:
+            print("\n[fallback] pdb2pqr failed. Attempting to continue with raw PDB...")
+            print("  WARNING: No partial charges — APBS output will be unreliable.")
+            print("  Install pdb2pqr:  pip install pdb2pqr")
+            sys.exit(1)
 
-    #clean this to prevent any errors or formatting errors
-    sanitize_pqr(pqr_path)
+        # clean this to prevent formatting errors
+        sanitize_pqr(pqr_path)
     # Neutralize the target residue so it does not bias the local potential.
     neutralize_target_residue_pqr(pqr_path, chain, resname, resseq)
 
@@ -860,23 +868,27 @@ def run_apbs_site_analysis(pdb_path, residue_spec, radius=8.0, ph=7.4,
                      fine_grid_length=fine_grid_len)
 
     # --- 6. Run APBS ---
-    success = run_apbs(apbs_in_path, work_dir)
-    if not success:
-        print("ERROR: APBS failed. Check the input file and logs above.")
-        sys.exit(1)
-
-    # --- 7. Read potential at nucleophilic atom ---
-    # APBS writes <prefix>0.dx (zero-indexed)
     dx_path = dx_prefix + "0.dx"
-    if not os.path.exists(dx_path):
-        # Try without the 0
-        dx_path_alt = dx_prefix + ".dx"
-        if os.path.exists(dx_path_alt):
-            dx_path = dx_path_alt
-        else:
-            print(f"ERROR: DX output not found at {dx_prefix}0.dx or {dx_prefix}.dx")
-            print(f"  Files in work dir: {os.listdir(work_dir)}")
+    dx_path_alt = dx_prefix + ".dx"
+    if reuse_existing and (os.path.exists(dx_path) or os.path.exists(dx_path_alt)):
+        dx_path = dx_path if os.path.exists(dx_path) else dx_path_alt
+        print(f"[apbs] Reusing cached DX: {dx_path}")
+    else:
+        success = run_apbs(apbs_in_path, work_dir, timeout=apbs_timeout)
+        if not success:
+            print("ERROR: APBS failed. Check the input file and logs above.")
             sys.exit(1)
+
+        # --- 7. Read potential at nucleophilic atom ---
+        # APBS writes <prefix>0.dx (zero-indexed)
+        if not os.path.exists(dx_path):
+            # Try without the 0
+            if os.path.exists(dx_path_alt):
+                dx_path = dx_path_alt
+            else:
+                print(f"ERROR: DX output not found at {dx_prefix}0.dx or {dx_prefix}.dx")
+                print(f"  Files in work dir: {os.listdir(work_dir)}")
+                sys.exit(1)
 
     print(f"\n[analysis] Reading potential from: {dx_path}")
     potential = read_dx_potential_at_point(dx_path, nuc_xyz)
@@ -939,6 +951,12 @@ Supported nucleophiles: CYS (SG), SER (OG), THR (OG1), TYR (OH), LYS (NZ), HIS (
                         help="Directory for intermediate files (default: temp dir, auto-deleted)")
     parser.add_argument("--keep-files",  action="store_true",
                         help="Keep intermediate files (PQR, DX, APBS input) after run")
+    parser.add_argument("--pdb2pqr-timeout", type=int, default=600,
+                        help="Timeout in seconds for each pdb2pqr attempt (default: 600)")
+    parser.add_argument("--apbs-timeout", type=int, default=900,
+                        help="Timeout in seconds for APBS run (default: 900)")
+    parser.add_argument("--reuse-existing", action="store_true",
+                        help="Reuse existing PQR/DX in work dir if present")
     args = parser.parse_args()
 
     run_apbs_site_analysis(
@@ -948,4 +966,7 @@ Supported nucleophiles: CYS (SG), SER (OG), THR (OG1), TYR (OH), LYS (NZ), HIS (
         ph=args.ph,
         work_dir=args.work_dir,
         keep_files=args.keep_files,
+        pdb2pqr_timeout=args.pdb2pqr_timeout,
+        apbs_timeout=args.apbs_timeout,
+        reuse_existing=args.reuse_existing,
     )

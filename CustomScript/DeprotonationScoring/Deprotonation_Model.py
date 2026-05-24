@@ -16,6 +16,7 @@ Usage:
     python Predict_Deprotonation.py deprot_xgb.pkl 4g5j.pdb A:CYS:797
     python Predict_Deprotonation.py deprot_xgb.pkl 4g5j.pdb A:CYS:797 --pdb-dir ./pdbs
     python Predict_Deprotonation.py deprot_xgb.pkl 4g5j.pdb A:HIS:42 --apbs-radius 12.0 --hbond-radius 6.0
+    python Predict_Deprotonation.py deprot_xgb.pkl 4g5j.pdb A:HIS:42 --no-apbs
 """
 
 import argparse
@@ -231,6 +232,15 @@ def run_apbs(pdb_path: str, residue_spec: str, radius: float, ph: float) -> Dict
     }
 
 
+def get_charged_residue_counts(pdb_path: str, chain: str, resseq: int, resname: str, radius: float) -> Dict[str, float]:
+    base, ext = os.path.splitext(pdb_path)
+    clean_pdb = pdb_path if base.endswith("_model1") else base + "_model1.pdb"
+    if not os.path.exists(clean_pdb):
+        extract_and_renumber_model1(pdb_path, clean_pdb)
+        print(f"[preprocess] Extracted MODEL 1 → {clean_pdb}")
+    return compute_charged_residue_counts(clean_pdb, chain, resname, resseq, radius)
+
+
 def run_hbonds(pdb_path: str, residue_spec: str, radius: float) -> Dict[str, float]:
     cmd = [
         "python", HBOND_SCRIPT,
@@ -249,7 +259,7 @@ def run_hbonds(pdb_path: str, residue_spec: str, radius: float) -> Dict[str, flo
 
 
 def build_features(pdb_path: str, chain: str, resname: str, resseq: int,
-                   apbs_radius: float, hbond_radius: float, ph: float) -> pd.DataFrame:
+                   apbs_radius: float, hbond_radius: float, ph: float, use_apbs: bool = True) -> pd.DataFrame:
     residue_spec = f"{chain}:{resname}:{resseq}"
 
     # Extract MODEL 1 to handle multi-model NMR structures
@@ -264,7 +274,12 @@ def build_features(pdb_path: str, chain: str, resname: str, resseq: int,
         print(f"[warn] No reference pKa for {resname} — ref_pka will be NaN")
 
     sasa = load_sasa(pdb_path, chain, resseq, resname)
-    apbs = run_apbs(clean_pdb, residue_spec, apbs_radius, ph)
+    if use_apbs:
+        apbs = run_apbs(clean_pdb, residue_spec, apbs_radius, ph)
+    else:
+        apbs = {
+            **get_charged_residue_counts(clean_pdb, chain, resseq, resname, apbs_radius),
+        }
     hbonds = run_hbonds(clean_pdb, residue_spec, hbond_radius)
 
     features = {
@@ -274,6 +289,9 @@ def build_features(pdb_path: str, chain: str, resname: str, resseq: int,
         **hbonds,
         "resname": resname,
     }
+
+    if not use_apbs:
+        features.pop("electrostatic_potential", None)
 
     print("\n[features] Computed features:")
     for k, v in features.items():
@@ -321,7 +339,7 @@ def run_analyze(args, pipeline):
         print(f"[analyze] ({idx + 1}/{len(df)}) {spec}")
         try:
             X    = build_features(pdb_path, chain, resname, resseq,
-                                   args.apbs_radius, args.hbond_radius, args.ph)
+                                   args.apbs_radius, args.hbond_radius, args.ph, use_apbs=not args.no_apbs)
             prob = float(np.clip(pipeline.predict(X)[0], 0.0, 1.0))
             prob_clipped = np.clip(prob, 1e-6, 1 - 1e-6)
             ref_pka      = REFERENCE_PKA.get(resname, np.nan)
@@ -460,6 +478,7 @@ Examples:
     parser.add_argument("--apbs-radius", type=float, default=12.0, help="APBS sphere radius (default: 12.0)")
     parser.add_argument("--hbond-radius", type=float, default=6.0,  help="H-bond search radius (default: 6.0)")
     parser.add_argument("--ph",         type=float, default=PHYSIOLOGIC_PH, help="pH for APBS (default: 7.4)")
+    parser.add_argument("--no-apbs", action="store_true", help="Skip APBS electrostatics and use only charged-residue counts")
     parser.add_argument("--analyze",    default=None,
                         help="Path to input CSV for batch prediction mode")
     parser.add_argument("--out-dir",    default=None,
@@ -500,7 +519,7 @@ Examples:
 
     # Build features
     X = build_features(pdb_path, chain, resname, resseq,
-                       args.apbs_radius, args.hbond_radius, args.ph)
+                       args.apbs_radius, args.hbond_radius, args.ph, use_apbs=not args.no_apbs)
 
     # Predict
     prob = pipeline.predict(X)[0]

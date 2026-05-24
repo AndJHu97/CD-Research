@@ -103,8 +103,79 @@ def classify_atom_orbitals(atom):
                 # C=O aldehyde/ketone/ester — carbonyl pi* is highly electrophilic
                 # Exclude amides (C=O with N neighbor) - not reactive due to resonance
                 if bond.GetBondType() == Chem.BondType.DOUBLE and other.GetSymbol() == "O":
-                    is_amide = any(n.GetSymbol() == "N" for n in atom.GetNeighbors() if n.GetIdx() != other.GetIdx())
-                    if not is_amide:
+                    # Detect whether this C=O is part of an amide (has an N neighbor).
+                    neighs = [n for n in atom.GetNeighbors() if n.GetIdx() != other.GetIdx()]
+                    amide_ns = [n for n in neighs if n.GetSymbol() == "N"]
+                    is_amide = len(amide_ns) > 0
+
+                    # If amide, allow through only for specific activating conditions:
+                    # - twisted/strained amide (small ring like beta-lactam)
+                    # - N is protonated (formal positive charge)
+                    # - N bears an EWG (e.g., N-sulfonyl, N-acyl)
+                    # - carbonyl is part of an activated class (carbamate/ester)
+                    allow_amide = False
+
+                    # Precompute atom index and ring info for twisted-amide detection
+                    atom_idx = atom.GetIdx()
+                    mol_ring_info = mol.GetRingInfo()
+                    if is_amide:
+                        n = amide_ns[0]
+                        # 1) Twisted / small-ring amide: C and N are in a small ring (<=5)
+                        try:
+                            for ring in mol_ring_info.AtomRings():
+                                if atom_idx in ring and n.GetIdx() in ring and len(ring) <= 5:
+                                    allow_amide = True
+                                    break
+                        except Exception:
+                            pass
+
+                        # 2) Protonated N (explicit positive charge)
+                        if not allow_amide and n.GetFormalCharge() > 0:
+                            allow_amide = True
+
+                        # 3) EWG on N: N-sulfonyl or N-acyl substitution (SMARTS)
+                        if not allow_amide:
+                            try:
+                                n_sulfonyl = Chem.MolFromSmarts("[NX3][S](=O)(=O)")
+                                n_acyl = Chem.MolFromSmarts("[NX3][C](=O)")
+                                if n_sulfonyl and mol.HasSubstructMatch(n_sulfonyl):
+                                    for match in mol.GetSubstructMatches(n_sulfonyl):
+                                        # match[0] is the N in the pattern
+                                        if n.GetIdx() == match[0]:
+                                            allow_amide = True
+                                            break
+                                if not allow_amide and n_acyl and mol.HasSubstructMatch(n_acyl):
+                                    for match in mol.GetSubstructMatches(n_acyl):
+                                        if n.GetIdx() == match[0]:
+                                            allow_amide = True
+                                            break
+                            except Exception:
+                                pass
+
+                    # 4) EWG on carbonyl carbon: carbamate/ester-like patterns (treat as electrophilic)
+                    if not allow_amide:
+                        try:
+                            carbamate = Chem.MolFromSmarts("[NX3][CX3](=O)O[#6]")
+                            simple_ester = Chem.MolFromSmarts("[CX3](=O)O[#6]")
+                            # Check matches where atom_idx corresponds to the carbonyl carbon position
+                            if carbamate and mol.HasSubstructMatch(carbamate):
+                                for match in mol.GetSubstructMatches(carbamate):
+                                    # pattern: N C(O) O R -> carbon at index 1
+                                    if atom_idx == match[1]:
+                                        allow_amide = True
+                                        break
+                            if not allow_amide and simple_ester and mol.HasSubstructMatch(simple_ester):
+                                for match in mol.GetSubstructMatches(simple_ester):
+                                    # simple ester pattern carbon at index 0
+                                    if atom_idx == match[0]:
+                                        allow_amide = True
+                                        break
+                        except Exception:
+                            pass
+
+                    # Final decision: if it's not an amide, it's a carbonyl electrophile; if it is amide,
+                    # only allow when one of the activating conditions matched.
+                    if not is_amide or allow_amide:
                         acceptor.append("pi* orbital (carbonyl)")
         
         # Nitrile: only label CARBON as electrophile, not nitrogen (critical fix)

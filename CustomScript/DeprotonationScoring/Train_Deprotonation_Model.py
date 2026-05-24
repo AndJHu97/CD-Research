@@ -54,6 +54,29 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 APBS_SCRIPT = os.path.join(SCRIPT_DIR, "APBS_Deprotonation.py")
 HBOND_SCRIPT = os.path.join(SCRIPT_DIR, "HBonds_Score.py")
 
+TARGET_ATOM = {
+	"ALA": "CA",
+	"ARG": "CA",
+	"ASN": "CA",
+	"ASP": "CA",
+	"CYS": "SG",
+	"GLN": "CA",
+	"GLU": "CA",
+	"GLY": "CA",
+	"HIS": "ND1",
+	"ILE": "CA",
+	"LEU": "CA",
+	"LYS": "NZ",
+	"MET": "CA",
+	"PHE": "CA",
+	"PRO": "CA",
+	"SER": "OG",
+	"THR": "OG1",
+	"TRP": "CA",
+	"TYR": "OH",
+	"VAL": "CA",
+}
+
 
 def compute_deprot_probability(pka: float, ph: float) -> float:
 	return 1.0 / (1.0 + 10 ** (pka - ph))
@@ -129,7 +152,20 @@ def run_hbonds_score(pdb_path: str, residue_spec: str, radius: float) -> Dict[st
 	}
 
 
-def run_apbs_deprotonation(pdb_path: str, residue_spec: str, radius: float, ph: float) -> Dict[str, float]:
+def run_apbs_deprotonation(
+	pdb_path: str,
+	residue_spec: str,
+	radius: float,
+	ph: float,
+	pdb2pqr_timeout: int,
+	apbs_timeout: int,
+	reuse_apbs_cache: bool,
+) -> Dict[str, float]:
+	base_name = os.path.splitext(os.path.basename(pdb_path))[0]
+	safe_residue = residue_spec.replace(":", "_")
+	apbs_work_dir = os.path.join(os.path.dirname(pdb_path), "apbs_cache", f"{base_name}_{safe_residue}")
+	os.makedirs(apbs_work_dir, exist_ok=True)
+
 	cmd = [
 		"python",
 		APBS_SCRIPT,
@@ -139,8 +175,16 @@ def run_apbs_deprotonation(pdb_path: str, residue_spec: str, radius: float, ph: 
 		str(radius),
 		"--ph",
 		str(ph),
+		"--work-dir",
+		apbs_work_dir,
 		"--keep-files",
+		"--pdb2pqr-timeout",
+		str(pdb2pqr_timeout),
+		"--apbs-timeout",
+		str(apbs_timeout),
 	]
+	if reuse_apbs_cache:
+		cmd.append("--reuse-existing")
 	result = subprocess.run(cmd, capture_output=True, text=True)
 	if result.returncode != 0:
 		print(f"[APBS stdout]:\n{result.stdout[-3000:]}") 
@@ -160,6 +204,84 @@ def run_apbs_deprotonation(pdb_path: str, residue_spec: str, radius: float, ph: 
 		"electrostatic_potential": potential,
 		**counts,
 	}
+
+
+def parse_pdb_atoms(pdb_path: str):
+	atoms = []
+	with open(pdb_path) as f:
+		for line in f:
+			if not line.startswith(("ATOM", "HETATM")):
+				continue
+			try:
+				atoms.append({
+					"record": line[0:6].strip(),
+					"serial": int(line[6:11]),
+					"name": line[12:16].strip(),
+					"alt": line[16].strip(),
+					"resname": line[17:20].strip(),
+					"chain": line[21].strip(),
+					"resseq": int(line[22:26]),
+					"icode": line[26].strip(),
+					"x": float(line[30:38]),
+					"y": float(line[38:46]),
+					"z": float(line[46:54]),
+				})
+			except (ValueError, IndexError):
+				continue
+	return atoms
+
+
+def find_target_atom(atoms, chain: str, resname: str, resseq: int):
+	target_atom = TARGET_ATOM.get(resname.upper())
+	if target_atom is None:
+		target_atom = "CA"
+	for atom in atoms:
+		chain_match = (chain is None) or (atom["chain"] == chain)
+		if (
+			chain_match
+			and atom["resname"].upper() == resname.upper()
+			and atom["resseq"] == resseq
+			and atom["name"].upper() == target_atom.upper()
+		):
+			return atom
+	return None
+
+
+def get_sphere_atoms(atoms, center_xyz, radius: float):
+	cx, cy, cz = center_xyz
+	result = []
+	for atom in atoms:
+		dx = atom["x"] - cx
+		dy = atom["y"] - cy
+		dz = atom["z"] - cz
+		if (dx * dx + dy * dy + dz * dz) <= radius * radius:
+			result.append(atom)
+	return result
+
+
+def compute_charged_residue_counts(pdb_path: str, chain: str, resname: str, resseq: int, radius: float) -> Dict[str, float]:
+	atoms = parse_pdb_atoms(pdb_path)
+	if not atoms:
+		raise RuntimeError(f"No ATOM records found in {pdb_path}")
+	atoms = [atom for atom in atoms if atom["alt"] in ("", "A")]
+	target = find_target_atom(atoms, chain, resname, resseq)
+	if target is None:
+		raise RuntimeError(f"Could not find target atom for {chain}:{resname}:{resseq}")
+	nuc_xyz = (target["x"], target["y"], target["z"])
+	sphere_atoms = get_sphere_atoms(atoms, nuc_xyz, radius)
+	sphere_residues = {(atom["chain"], atom["resname"], atom["resseq"]) for atom in sphere_atoms}
+	counts = {"arg_count": 0, "lys_count": 0, "asp_count": 0, "glu_count": 0}
+	for _, residue_name, _ in sphere_residues:
+		residue_name_u = residue_name.upper()
+		if residue_name_u == "ARG":
+			counts["arg_count"] += 1
+		elif residue_name_u == "LYS":
+			counts["lys_count"] += 1
+		elif residue_name_u == "ASP":
+			counts["asp_count"] += 1
+		elif residue_name_u == "GLU":
+			counts["glu_count"] += 1
+	return counts
 
 
 def _extract_float(text: str, pattern: str) -> float:
@@ -296,7 +418,17 @@ def extract_and_renumber_model1(pdb_path: str, out_path: str) -> None:
                     serial += 1
                 f_out.write(line)
 
-def build_feature_row(row: pd.Series, pdb_dir: str, apbs_radius: float, hbond_radius: float, ph: float) -> Dict[str, float]:
+def build_feature_row(
+	row: pd.Series,
+	pdb_dir: str,
+	apbs_radius: float,
+	hbond_radius: float,
+	ph: float,
+	pdb2pqr_timeout: int,
+	apbs_timeout: int,
+	reuse_apbs_cache: bool,
+	use_apbs: bool,
+) -> Optional[Dict[str, float]]:
 	pdb_path = find_pdb_path(row["pdb"], pdb_dir)
 	chain = str(row["chain"]).strip()
 	resseq = int(row["resseq"])
@@ -309,7 +441,28 @@ def build_feature_row(row: pd.Series, pdb_dir: str, apbs_radius: float, hbond_ra
 	clean_pdb = base + "_model1.pdb"
 	if not os.path.exists(clean_pdb):
 		extract_and_renumber_model1(pdb_path, clean_pdb)
-	apbs = run_apbs_deprotonation(clean_pdb, residue_spec, apbs_radius, ph)
+	if use_apbs:
+		try:
+			apbs = run_apbs_deprotonation(
+				clean_pdb,
+				residue_spec,
+				apbs_radius,
+				ph,
+				pdb2pqr_timeout,
+				apbs_timeout,
+				reuse_apbs_cache,
+			)
+		except RuntimeError as exc:
+			print(f"[APBS] FAILED for {residue_spec}: {exc} -- using count-only fallback")
+			apbs = {
+				"electrostatic_potential": np.nan,
+				**compute_charged_residue_counts(clean_pdb, chain, resname, resseq, apbs_radius),
+			}
+	else:
+		apbs = {
+			"electrostatic_potential": np.nan,
+			**compute_charged_residue_counts(clean_pdb, chain, resname, resseq, apbs_radius),
+		}
 	hbonds = run_hbonds_score(clean_pdb, residue_spec, hbond_radius)
 
 	return {
@@ -391,12 +544,20 @@ def main():
 	parser.add_argument("--apbs-radius", type=float, default=12.0, help="APBS sphere radius")
 	parser.add_argument("--hbond-radius", type=float, default=6.0, help="H-bond search radius")
 	parser.add_argument("--ph", type=float, default=PHYSIOLOGIC_PH, help="Physiologic pH")
+	parser.add_argument("--pdb2pqr-timeout", type=int, default=600, help="Timeout in seconds per pdb2pqr attempt")
+	parser.add_argument("--apbs-timeout", type=int, default=900, help="Timeout in seconds for APBS solve")
+	parser.add_argument("--reuse-apbs-cache", action="store_true", help="Reuse cached APBS intermediates per residue")
+	parser.add_argument("--no-apbs", action="store_true", help="Skip the APBS solve and train on count-only features")
+	parser.add_argument("--use-cached-fold-features", action="store_true", help="Reuse previously saved per-fold train/test feature CSVs instead of rebuilding features")
+	parser.add_argument("--feature-cache-stem", default=None, help="Stem used to locate cached fold feature CSVs (defaults to the current model stem)")
 	parser.add_argument("--shuffle-groups", action="store_true", help="Randomize group assignment before building folds")
 	parser.add_argument("--random-state", type=int, default=7, help="Random seed used when shuffling groups")
 	parser.add_argument("--model-out", default="deprot_xgb.json", help="Output model file")
 	args = parser.parse_args()
 
 	df = pd.read_csv(args.pkadr_csv)
+	# Preserve original PKAD row position for traceability after filtering.
+	df["pkadr_rownum"] = np.arange(len(df))
 	pdb_col, chain_col, resid_col, resname_col, pka_col = parse_pkadr_columns(df)
 
 	df = df.rename(columns={
@@ -419,22 +580,76 @@ def main():
 	print(f"[filter] {len(df)} samples remaining after filtering warnings.")
 
 
-	labels = df["pka"].apply(lambda x: compute_deprot_probability(x, args.ph))
+	output_dir = os.path.dirname(args.model_out) or "."
+	model_stem = os.path.splitext(os.path.basename(args.model_out))[0]
+	results_csv = os.path.join(output_dir, f"{model_stem}_cv_results.csv")
+	oof_csv = os.path.join(output_dir, f"{model_stem}_oof_predictions.csv")
+	metadata_csv = os.path.join(output_dir, f"{model_stem}_row_metadata.csv")
+	cache_stem = args.feature_cache_stem or model_stem
 
-	feature_rows = []
-	for _, row in df.iterrows():
-		feature_rows.append(build_feature_row(row, args.pdb_dir, args.apbs_radius, args.hbond_radius, args.ph))
+	if args.use_cached_fold_features:
+		print(f"[build] Reusing cached fold features from stem '{cache_stem}'")
+		cached_test_frames = []
+		for fold_num in range(1, 11):
+			train_cache = os.path.join(output_dir, f"{cache_stem}_fold{fold_num:02d}_train_features.csv")
+			test_cache = os.path.join(output_dir, f"{cache_stem}_fold{fold_num:02d}_test_features.csv")
+			if not os.path.isfile(train_cache):
+				raise FileNotFoundError(f"Missing cached training features: {train_cache}")
+			if not os.path.isfile(test_cache):
+				raise FileNotFoundError(f"Missing cached test features: {test_cache}")
+			cached_test_frames.append(pd.read_csv(test_cache))
 
-	
-	feat_df = pd.DataFrame(feature_rows)
-	feat_df["label"] = labels.values
-	feat_df["pdb"] = df["pdb"].values  # for grouped splitting
-	feat_df["row_id"] = np.arange(len(feat_df))
+		feat_df = pd.concat(cached_test_frames, ignore_index=True)
+		if "row_id" not in feat_df.columns:
+			raise ValueError("Cached fold feature CSVs must include a row_id column.")
+		feat_df = feat_df.sort_values("row_id").drop_duplicates(subset=["row_id"], keep="first").reset_index(drop=True)
+		if "row_id" not in feat_df.columns:
+			feat_df["row_id"] = np.arange(len(feat_df))
+		if "label" not in feat_df.columns:
+			raise ValueError("Cached fold feature CSVs must include a label column.")
+		print(f"[build] Loaded cached fold feature rows: {len(feat_df)}")
+	else:
+		feature_rows = []
+		kept_indices = []
+		skipped = 0
+		for idx, row in df.iterrows():
+			feature_row = build_feature_row(
+				row,
+				args.pdb_dir,
+				args.apbs_radius,
+				args.hbond_radius,
+				args.ph,
+				args.pdb2pqr_timeout,
+				args.apbs_timeout,
+				args.reuse_apbs_cache,
+				not args.no_apbs,
+			)
+			if feature_row is None:
+				skipped += 1
+				continue
+			feature_rows.append(feature_row)
+			kept_indices.append(idx)
+
+		print(f"[build] {len(feature_rows)} rows built, {skipped} skipped due to APBS errors.")
+		if not feature_rows:
+			raise SystemExit("No features could be computed. Check APBS/pdb2pqr installation and timeouts.")
+
+		feat_df = pd.DataFrame(feature_rows)
+		kept_df = df.loc[kept_indices].reset_index(drop=True)
+		labels = kept_df["pka"].apply(lambda x: compute_deprot_probability(x, args.ph))
+		feat_df["label"] = labels.values
+		feat_df["pdb"] = kept_df["pdb"].values  # for grouped splitting
+		feat_df["chain"] = kept_df["chain"].astype(str).str.strip().values
+		feat_df["resseq"] = kept_df["resseq"].values
+		feat_df["expt_pka"] = kept_df["pka"].values
+		feat_df["pkadr_rownum"] = kept_df["pkadr_rownum"].values
+		if "Index" in kept_df.columns:
+			feat_df["pkadr_index"] = kept_df["Index"].values
+		feat_df["row_id"] = np.arange(len(feat_df))
       
 	feature_cols = [
 		"ref_pka",
 		"sasa",
-		"electrostatic_potential",
 		"arg_count",
 		"lys_count",
 		"asp_count",
@@ -443,6 +658,8 @@ def main():
 		"hbonds_strict_flexible",
 		"resname",
 	]
+	if not args.no_apbs:
+		feature_cols.insert(2, "electrostatic_potential")
 
 	X = feat_df[feature_cols]
 	y = feat_df["label"]
@@ -450,7 +667,6 @@ def main():
 	numeric_features = [
 		"ref_pka",
 		"sasa",
-		"electrostatic_potential",
 		"arg_count",
 		"lys_count",
 		"asp_count",
@@ -458,6 +674,8 @@ def main():
 		"hbonds_weighted",
 		"hbonds_strict_flexible",
 	]
+	if not args.no_apbs:
+		numeric_features.insert(2, "electrostatic_potential")
 
 	categorical_features = ["resname"]
 
@@ -485,7 +703,7 @@ def main():
 	)
 
 	n_splits = 10
-	group_counts = df.groupby("pdb").size()
+	group_counts = feat_df.groupby("pdb").size()
 	if group_counts.size < n_splits:
 		raise ValueError(
 			f"Need at least {n_splits} unique PDB groups for {n_splits}-fold CV; found {group_counts.size}."
@@ -495,12 +713,39 @@ def main():
 	else:
 		print("[cv] Using deterministic group assignment (no shuffle)")
 
-	output_dir = os.path.dirname(args.model_out) or "."
-	model_stem = os.path.splitext(os.path.basename(args.model_out))[0]
-	results_csv = os.path.join(output_dir, f"{model_stem}_cv_results.csv")
-	oof_csv = os.path.join(output_dir, f"{model_stem}_oof_predictions.csv")
+	metadata_cols = [
+		"row_id",
+		"pdb",
+		"chain",
+		"resseq",
+		"resname",
+		"expt_pka",
+		"label",
+		"pkadr_rownum",
+	]
+	if "pkadr_index" in feat_df.columns:
+		metadata_cols.append("pkadr_index")
+	if not args.use_cached_fold_features:
+		feat_df[metadata_cols].to_csv(metadata_csv, index=False)
+		print(f"Saved row metadata to {metadata_csv}")
+	elif os.path.isfile(metadata_csv):
+		print(f"[build] Using existing metadata file {metadata_csv}")
 
-	splits = make_group_splits(feat_df["pdb"], n_splits, args.shuffle_groups, args.random_state)
+	if args.use_cached_fold_features:
+		splits = []
+		for fold_num in range(1, n_splits + 1):
+			test_cache = os.path.join(output_dir, f"{cache_stem}_fold{fold_num:02d}_test_features.csv")
+			test_df = pd.read_csv(test_cache)
+			test_row_ids = set(test_df["row_id"].tolist()) if "row_id" in test_df.columns else set()
+			if test_row_ids:
+				test_mask = feat_df["row_id"].isin(test_row_ids).to_numpy()
+			else:
+				test_mask = np.zeros(len(feat_df), dtype=bool)
+			train_idx = np.flatnonzero(~test_mask)
+			test_idx = np.flatnonzero(test_mask)
+			splits.append((train_idx, test_idx))
+	else:
+		splits = make_group_splits(feat_df["pdb"], n_splits, args.shuffle_groups, args.random_state)
 	fold_results = []
 	oof_rows = []
 
