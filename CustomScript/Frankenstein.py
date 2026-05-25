@@ -1348,6 +1348,7 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
                 input_csv,
                 "--out-dir",
                 output_dir,
+                "--no-apbs"
             ]
             proc = subprocess.run(cmd, cwd=script_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             print(f"      Deprotonation analyzer exit code: {proc.returncode}")
