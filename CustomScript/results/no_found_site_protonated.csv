@@ -1,8 +1,0 @@
-name,pdb_file,electrophile_smiles,warhead_types,search_space_reduction,found_site
-1Q6K-TCO,1Q6K,CC(C)(C)OC(=O)N[C@H](C=O)C1CCCCC1,"Aldehyde, Carbamate (amide-like)","99.07, 100","FALSE, FALSE"
-2AUZ-CT2,2AUZ,CCCC[C@@H](C=O)NC(=O)OC1(Cc2ccccc2)CCCC1,"Aldehyde, Carbamate (amide-like)","99.07, 100","FALSE, FALSE"
-3OVX-O64,3OVX,CC[C@@H](C=O)NC(=O)c1cccc(C(F)(F)F)c1Cl,"Aldehyde, Heteroaryl halide (SNAr)","98.62, 98.62","FALSE, FALSE"
-5C1Y-GHY,5C1Y,CC(C)OC(=O)N[C@@H](Cc1ccccc1)C(=O)N[C@H](CO)C[C@@H]1CCNC1=O,Carbamate (amide-like),100,FALSE
-5DGJ-V64,5DGJ,O=C[C@@]1([H])CC(=O)N[C@@H](CC2=CC=CC=C2)C(=O)N[C@@H](CC(=O)N1)CC3=CC=CC=C3,Aldehyde,100,FALSE
-5TG2-V69,5TG2,CCCCC[C@@H]1CCCCCNC(=O)CC[C@@H](CO)NC(=O)[C@H](CC(C)C)NC(=O)O1,Carbamate (amide-like),100,FALSE
-2FT2-C28,2FT2,NCC1(NC(=O)[C@H](CS(=O)(=O)N2CCOCC2)N[C@@H](c2ccc(F)cc2)C(F)(F)F)CC1,"Heteroaryl halide (SNAr), Sulfonamide (activated)","100, 100","FALSE, FALSE"

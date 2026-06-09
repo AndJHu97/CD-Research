@@ -26,6 +26,45 @@ SASA_CUTOFFS = {
     "LYS": 15.0,
 }
 
+WATER_RESIDUES = {"HOH", "WAT", "H2O", "DOD", "SOL"}
+
+PRESERVE_HETATM_RESIDUES = {
+    "NA", "NA1", "K", "K1", "CA", "CA2", "MG", "MG2", "ZN", "ZN2", "MN", "MN2", "FE", "FE2", "FE3", "CU", "CO", "NI", "CL",
+    "BR", "IOD", "SO4", "PO4", "HEM", "HEME", "FAD", "FMN", "NAD",
+    "NAP", "SAM", "SAH", "GDP", "GTP", "ADP", "ATP", "CMP", "UMP", "GMP",
+    "AMP", "FUC", "MAN", "NAG", "BMA", "MSE",
+}
+
+
+def clean_pdb_for_sasa(pdb_path):
+    """Write a cleaned PDB for SASA calculations.
+
+    Keeps ATOM records, removes common waters, and drops nonessential HETATM
+    ligands while preserving a small allowlist of common ions/cofactors.
+    """
+    cleaned_path = os.path.splitext(os.path.abspath(pdb_path))[0] + "_sasa_cleaned.pdb"
+
+    if os.path.exists(cleaned_path):
+        return cleaned_path
+
+    with open(pdb_path, "r") as handle_in, open(cleaned_path, "w") as handle_out:
+        for line in handle_in:
+            record = line[:6].strip().upper()
+            if record == "ATOM":
+                handle_out.write(line)
+                continue
+
+            if record != "HETATM":
+                continue
+
+            resname = line[17:20].strip().upper()
+            if resname in WATER_RESIDUES:
+                continue
+            if resname in PRESERVE_HETATM_RESIDUES:
+                handle_out.write(line)
+
+    return cleaned_path
+
 def estimate_electrophile_sasa(smiles):
     """Optional: calculate electrophile SASA for reference."""
     if not smiles:
@@ -59,12 +98,16 @@ def run_freesasa(pdb_path):
     pdb_basename = os.path.basename(pdb_path)
     rsa_file = os.path.join(sasa_output_dir, os.path.splitext(pdb_basename)[0] + "_sasa.rsa")
 
+    cleaned_pdb = clean_pdb_for_sasa(pdb_path)
+    if os.path.exists(rsa_file):
+        return rsa_file
+
     try:
         freesasa = importlib.import_module("freesasa")
     except ImportError as exc:
         raise FileNotFoundError("freesasa Python package not installed") from exc
 
-    structure = freesasa.Structure(pdb_path)
+    structure = freesasa.Structure(cleaned_pdb)
     result = freesasa.calc(structure)
     residue_areas = result.residueAreas()
 
@@ -96,6 +139,10 @@ def run_propka(pdb_path):
     # We need to run it and then move the file to our organized directory
     pdb_basename = os.path.basename(pdb_path)
     pdb_base_no_ext = os.path.splitext(pdb_basename)[0]
+    pka_file_dest = os.path.join(pka_output_dir, f"{pdb_base_no_ext}.pka")
+
+    if os.path.exists(pka_file_dest):
+        return pka_file_dest
     
     # Run PROPKA (it will create .pka file in current directory or PDB directory)
     subprocess.run(["propka3", pdb_path], check=True)
@@ -117,7 +164,6 @@ def run_propka(pdb_path):
         raise FileNotFoundError(f"PROPKA output file not found. Checked: {possible_pka_locations}")
     
     # Move to organized directory
-    pka_file_dest = os.path.join(pka_output_dir, f"{pdb_base_no_ext}.pka")
     if os.path.abspath(pka_file_source) != os.path.abspath(pka_file_dest):
         import shutil
         shutil.move(pka_file_source, pka_file_dest)

@@ -16,6 +16,11 @@ __pycache__/
 *.pyc
 *.pyo
 
+*.csv
+*.json
+*.pdb
+*.log
+
 # Temporary files
 *.xyz
 *.mol

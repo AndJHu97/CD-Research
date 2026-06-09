@@ -24,6 +24,7 @@ Author: Combined from highlight_nucleophiles_adv_2.py and single_AA_bond.py
 import os
 import sys
 import json
+import numpy as np
 import pandas as pd
 from rdkit import Chem
 import urllib.request
@@ -119,6 +120,27 @@ NUCLEOPHILE_ATOM_INDEX = {
 # ELECTROPHILE REACTIVE CENTER DETECTION
 # ============================================================================
 
+# Utility: write DataFrame to CSV atomically (write to temp then replace)
+def safe_to_csv(df, path, index=False):
+    """Write DataFrame to a temporary file and atomically replace the target.
+    This reduces the chance of leaving partially-written CSVs when the process
+    is interrupted, improving safety for `--reuse-existing` checks.
+    """
+    dirpath = os.path.dirname(path)
+    if dirpath:
+        os.makedirs(dirpath, exist_ok=True)
+    tmp = path + ".tmp"
+    try:
+        df.to_csv(tmp, index=index)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+
+
 # TODO: Expand this list with more electrophilic warheads
 # Each entry: (name, SMARTS pattern, reactive_atom_index, hsab_classification)
 # reactive_atom_index: which atom in the SMARTS match is the reactive center (0-indexed)
@@ -127,14 +149,14 @@ ELECTROPHILE_WARHEADS = [
     # Michael acceptors
     ("Alpha-beta unsaturated carbonyl (Michael acceptor)", "[CX3](=O)[CX3]=[CX3]", 3, "soft"),  # β-carbon (index 3 in SMARTS match = C(=O)-C=C pattern where β is last)
     ("Acrylamide warhead", "C=CC(=O)N", 0, "soft"),  # β-carbon of C=CC
-    ("Propiolamide warhead", "C#CC(=O)N", 0, "soft"),  # β-carbon of C#CC (alkynyl amide Michael acceptor)
+    ("Propiolamide warhead", "[CX2H1]#[CX2]C(=O)[NX3H]", 0, "soft"),# β-carbon of C#CC (alkynyl amide Michael acceptor)
     ("Ketoamide (Michael acceptor)", "[NX3][CX3](=O)[CX3]=[CX3]", 2, "soft"),  # β-carbon in amide-conjugated Michael acceptor
     ("Vinyl sulfone", "C=C[SX4](=O)(=O)[#6]", 0, "soft"),        # carbon on both sides
     ("Vinyl sulfonate ester", "C=C[SX4](=O)(=O)O[#6]", 0, "soft"),  # sulfur bonded to alkoxy leaving group
     ("Vinylsulfonamide", "C=C[SX4](=O)(=O)[NX3]", 0, "soft"),    # nitrogen on sulfonyl
 
     # Carbonyl-based electrophiles
-    ("Aldehyde", "[CX3H1](=O)[#6]", 0, "hard"),      # carbonyl carbon
+    ("Aldehyde", "[CX3H1;!R](=O)", 0, "hard"),      # carbonyl carbon
     ("Ketone (reactive)", "[CX3](=O)([#6])[#6]", 0, "soft"),  # carbonyl carbon
     ("Activated ketone", "[#6X3](=O)[#6X3](=O)", 0, "soft"),   # carbonyl carbon (1,2-dicarbonyl, includes aromatic quinone-like motifs)
 
@@ -144,13 +166,13 @@ ELECTROPHILE_WARHEADS = [
     ("Carbamate (amide-like)", "[NX3][CX3](=O)O[#6]", 1, "hard"),  # carbonyl carbon is less electrophilic due amide resonance
 
     # Halogenated carbonyls
-    ("Alpha-halo carbonyl", "[CX4][F,Cl,Br,I]C(=O)", 0, "soft"),  # carbon attached to halogen
+    ("Alpha-halo carbonyl", "[CX4;!R]([F,Cl,Br,I])C(=O)", 0, "soft"),
     ("Fluoromethyl ketone", "C(=O)CF", 1, "soft"),                # carbonyl carbon
 
     # Epoxides and aziridines
-    ("Epoxide", "C1OC1", 0, "hard"),     # one of the ring carbons (usually less hindered)
-    ("Alpha-beta epoxyketone (epoxide)", "C(=O)C1OC1", 4, "borderline"),  # proteasome inhibitor - beta carbon in epoxide ring (more reactive)
-    ("Alpha-beta epoxyketone (carbonyl)", "C(=O)C1OC1", 0, "hard"),  # proteasome inhibitor - ketone carbon
+    ("Epoxide", "[CX4;R3]1[OX2;R3][CX4;R3]1", 0, "hard"),  # one of the ring carbons (usually less hindered)
+    ("Alpha-beta epoxyketone (epoxide)", "[CX3](=O)[CX4;R3]1[OX2;R3][CX4;R3]1", 2, "borderline"),  # index 2 = first epoxide carbon
+    ("Alpha-beta epoxyketone (carbonyl)", "[CX3](=O)[CX4;R3]1[OX2;R3][CX4;R3]1", 0, "hard"),       # index 0 = carbonyl carbon
     ("Aziridine", "C1NC1", 0, "hard"),   # carbon in the three-membered ring
 
     # Nitriles
@@ -164,26 +186,40 @@ ELECTROPHILE_WARHEADS = [
     # Leaving group displacement
     ("Alkyl halide (good LG)", "[CX4][Br,I]", 0, "soft"),  # carbon attached to halogen
     ("Alkyl chloride", "[CX4]Cl", 0, "borderline"),             # carbon attached to Cl
-    ("Nitro-activated aryl halide (SNAr)", "[c]1[c]([N+](=O)[O-])[c][c][c]([F,Cl,Br,I])[c]1", 7, "soft"),  # aryl carbon bearing halide is the SNAr attack site
-    ("Heteroaryl halide (SNAr)", "[c]1[c]([F,Cl,Br,I])[c,n][c,n][c,n][c,n]1", 1, "soft"),  # heteroaryl halide (pyridine-like, quinoline-like); attack at halide-bearing carbon
+    ("Nitro-activated aryl halide SNAr (ortho)", "[c]1([N+](=O)[O-])[c]([F,Cl,Br,I])cccc1", 0, "soft"),
+    ("Nitro-activated aryl halide SNAr (para)", "[c]1([N+](=O)[O-])ccc([F,Cl,Br,I])cc1", 0, "soft"),
 
     # Sulfonyl-based
     ("Sulfonyl fluoride", "S(=O)(=O)F", 0, "borderline"),      # sulfur
     ("Sulfonamide (activated)", "[NX3][S](=O)(=O)", 1, "borderline"),  # sulfur as reactive center
+
+    # Organophosphorus-based
+    ("Phosphonyl fluoride (phosphonofluoridate)", "[P](=O)(F)(O[#6])[#6]", 0, "hard"),  # phosphorus center
 
     # Disulfides
     ("Disulfide", "[SX2][SX2]", 0, "soft"),              # sulfur
 
     # Lactones/lactams (strained rings)
     ("Beta-lactone", "C1OC(=O)C1", 2, "hard"),  # carbonyl carbon in ring
-    ("Beta-lactam", "C1NC(=O)C1", 2, "hard"),   # carbonyl carbon in ring
+    ("Beta-lactam", "[NX3;R4]C(=O)[CX4;R4][CX4;R4]", 2, "hard"),   # carbonyl carbon in ring
+    ("Monobactam / N-sulfonyloxy beta-lactam", "[NX3;R][CX3;R](=O)[NX3;R][OX2][SX4](=O)(=O)[OX2]", 1, "hard"),
+    ("Gamma-lactone (5-membered)", "[OX2;R5][CX3;R5](=O)", 1, "soft"),
 
     # Isocyanates/isothiocyanates
     ("Isocyanate", "N=C=O", 1, "hard"),         # carbon between N and O
     ("Isothiocyanate", "N=C=S", 1, "soft"),     # carbon between N and S
 
-    # Boronic acids (reversible covalent)
-    ("Boronic acid", "[BX3](O)O", 0, "hard"),   # boron
+    # Thioesters and sulfonyl-sulfide (soft electrophiles)
+    ("Thioester", "[CX3](=O)[SX2]", 0, "soft"),  # carbonyl carbon of thioester (acyl transfer)
+    ("Thiophosphonate ester", "[PX4](=O)([SX2])[OX2]", 0, "hard"),
+    ("Sulfonyl-sulfide", "[SX4](=O)(=O)[SX2]", 0, "soft"),  # sulfonyl–sulfide motif (activated sulfur)
+
+    # Urea carbonyl (general detector) - note: plain ureas are usually poor electrophiles
+    ("Urea carbonyl", "[NX3][CX3](=O)[NX3]", 1, "hard"),  # carbonyl carbon of urea-like motifs
+
+    # Boronic acids (reversible covalent) - match B with two hydroxyls
+    ("Boronic acid", "[B]([OX2])[OX2]", 0, "hard"),  # drop BX3 constraint entirely
+    ("Cyclic boronic ester", "[BX3;R]([OX2;R])[OX2;R]", 0, "hard"),
 
     # Imine-based (reversible covalent, mainly Lys targeting). COULD REMOVE?? Not strong? Dont' include for now because are usually reversible
     #("Imine (Schiff base former)", "[CX3]=[NX2]", 0, "hard"),           # imine carbon
@@ -194,7 +230,30 @@ ELECTROPHILE_WARHEADS = [
     #("Alpha-beta unsaturated imine", "[CX3]=[CX3][CX3]=[NX2]", 0, "soft"), # vinylogous imine
     ("Aliphatic imine (Schiff base former)", "[CX3H1]=[NX2H1]", 0, "hard"),  # Lys targeting
     ("Vinyl imine", "[CX3]=[CX3][CX3]=[NX2]", 0, "borderline"),  # extended system
+    ("Vinyl halide (activated)", "[CX3]=[CX3][F,Cl,Br,I]", 0, "soft"),
+    ("Heteroaryl halide (SNAr)", "[c]1[c]([F,Cl,Br,I])[c,n][c,n][c,n][c,n]1", 1, "soft"),
+
+
+    #Diazo smarts
+    ("Diazomethyl ketone", "[CX3](=O)[CX3H1]=[N+]=[N-]", 1, "soft"),
+    ("Diazo carbonyl (general)", "[CX3](=O)[CX3]=[N+]=[N-]", 1, "soft"),
+
+    #Aryl alkyne
+    ("Aryl alkyne", "[c][CX2]#[CX2H1]", 1, "soft"),
+    ("Allylic halide", "[CX4;!R]([F,Cl,Br,I])C=C", 0, "soft"),
 ]
+
+# Additional warheads discovered in bo_missing_warheads -> CovInDB mapping
+# These are conservative, specific SMARTS added to improve detection for
+# phosphonates, broader alkyl halides, sulfonyl chlorides, carbodiimides,
+# and thiiranes (episulfides).
+ELECTROPHILE_WARHEADS.extend([
+    ("Phosphonate (general)", "P(=O)(O)O", 0, "hard"),
+    ("Sulfonyl chloride", "S(=O)(=O)Cl", 0, "borderline"),
+    ("Alkyl halide (Cl,Br,I)", "[CX4][Cl,Br,I]", 0, "soft"),
+    ("Carbodiimide", "N=C=N", 1, "hard"),
+    ("Thiirane (episulfide)", "C1CS1", 0, "soft"),
+])
 
 
 def detect_electrophile_warheads(mol):
@@ -731,6 +790,20 @@ def compute_reactivity_score(electrophile_smiles, reactive_idx, nucleophile_type
     Returns:
         dict with scoring components
     """
+    def calculate_hsab_descriptors(homo, lumo):
+        eta = (lumo - homo) / 2.0
+        mu = (lumo + homo) / 2.0
+        return eta, mu
+
+    def calculate_nucleophilicity_index(nuc_homo, nuc_lumo, elec_homo, elec_lumo):
+        eta_a, mu_a = calculate_hsab_descriptors(nuc_homo, nuc_lumo)
+        eta_b, mu_b = calculate_hsab_descriptors(elec_homo, elec_lumo)
+        # Note: In paper, they have this as subtracted in Table 6 caption. I am assuming this is a mistake and equation 5 in paper (which this is based on) is the correct version
+        denominator = 2.0 * ((eta_a + eta_b) ** 2)
+        if denominator == 0:
+            return 0.0
+        return eta_a * ((mu_a - mu_b) ** 2) / denominator
+
     # Check cache first (only if use_cache=True)
     if cache is not None and use_cache:
         cache_key = get_cache_key(electrophile_smiles, reactive_idx, nucleophile_type, protonation_state)
@@ -766,12 +839,14 @@ def compute_reactivity_score(electrophile_smiles, reactive_idx, nucleophile_type
         # Check nucleophile cache for HOMO energy (only if use_cache=True)
         nuc_cache_key = get_nucleophile_cache_key(nucleophile_type, protonation_state)
         n_homo = None
+        n_lumo = None
         
         if nucleophile_cache is not None and use_cache and nuc_cache_key in nucleophile_cache:
             # Use cached nucleophile HOMO
             n_homo = nucleophile_cache[nuc_cache_key].get("homo")
+            n_lumo = nucleophile_cache[nuc_cache_key].get("lumo")
         
-        if n_homo is None:
+        if n_homo is None or n_lumo is None:
             # Need to compute nucleophile properties
             n_mol = rdkit_mol_from_smiles(sur_smiles)
             n_xyz = os.path.join(tmpdir, "nuc.xyz")
@@ -787,11 +862,13 @@ def compute_reactivity_score(electrophile_smiles, reactive_idx, nucleophile_type
                 
             n_neutral = run_xtb_xyz(n_xyz, charge=nuc_charge, gbsa="water")
             n_homo = n_neutral["homo"]
+            n_lumo = n_neutral["lumo"]
             
             # Cache the nucleophile HOMO energy
             if nucleophile_cache is not None:
                 nucleophile_cache[nuc_cache_key] = {
                     "homo": n_homo,
+                    "lumo": n_lumo,
                     "smiles": sur_smiles,
                     "charge": nuc_charge
                 }
@@ -801,6 +878,7 @@ def compute_reactivity_score(electrophile_smiles, reactive_idx, nucleophile_type
         # Would compute: deltaE = E(adduct) - E(electrophile) - E(nucleophile)
         
         # Compute descriptors
+        e_homo = e_neutral["homo"]
         lumo = e_neutral["lumo"]
         
         # Fukui f+ on reactive atom: q(N+1) - q(N)
@@ -824,6 +902,10 @@ def compute_reactivity_score(electrophile_smiles, reactive_idx, nucleophile_type
             homo_lumo_gap = e_neutral["lumo"] - n_homo
         else:
             homo_lumo_gap = 12.0  # fallback
+
+        nucleophilicity_index = 0.0
+        if None not in (n_homo, n_lumo, e_homo, lumo):
+            nucleophilicity_index = calculate_nucleophilicity_index(n_homo, n_lumo, e_homo, lumo)
         
         # Normalize HOMO-LUMO gap to 0-1 (lower gap = higher score)
         if homo_lumo_gap <= min_gap:
@@ -847,18 +929,24 @@ def compute_reactivity_score(electrophile_smiles, reactive_idx, nucleophile_type
         S_raw = (WEIGHTS["lumo"] * L_n + 
                  WEIGHTS["fukui"] * F_n + 
                  WEIGHTS["lg"] * G_n + 
-                 WEIGHTS["homo_lumo_gap"] * HL_n)
+                 WEIGHTS["homo_lumo_gap"] * HL_n +
+                 WEIGHTS.get("nucleophilicity_index", 0.0) * nucleophilicity_index)
         
         result = {
             "reactivity_score": S_raw,
+            "electrophile_homo": e_homo,
+            "electrophile_lumo": lumo,
             "lumo": lumo,
             "lumo_normalized": L_n,
+            "nucleophile_homo": n_homo,
+            "nucleophile_lumo": n_lumo,
             "fukui": fukui,
             "fukui_normalized": F_n,
             "leaving_group_score": G_n,
             "homo_lumo_gap": homo_lumo_gap,
             "homo_lumo_gap_normalized": HL_n,
             "partial_charge": partial_charge,
+            "nucleophilicity_index": nucleophilicity_index,
         }
         
         # Save to cache if provided
@@ -870,6 +958,36 @@ def compute_reactivity_score(electrophile_smiles, reactive_idx, nucleophile_type
     
     finally:
         shutil.rmtree(tmpdir)
+
+
+def attach_reactivity_component_columns(df, score_map, state_suffix):
+    """Attach per-component reactivity outputs for each residue row."""
+    normalized_score_map = {
+        str(key).strip().upper(): value for key, value in score_map.items()
+    }
+    field_map = {
+        f"Reactivity_Score_{state_suffix}": "reactivity_score",
+        f"Electrophile_HOMO_{state_suffix}": "electrophile_homo",
+        f"Electrophile_LUMO_{state_suffix}": "electrophile_lumo",
+        f"Nucleophile_HOMO_{state_suffix}": "nucleophile_homo",
+        f"Nucleophile_LUMO_{state_suffix}": "nucleophile_lumo",
+        f"Fukui_{state_suffix}": "fukui",
+        f"Fukui_Normalized_{state_suffix}": "fukui_normalized",
+        f"Leaving_Group_Score_{state_suffix}": "leaving_group_score",
+        f"HOMO_LUMO_Gap_{state_suffix}": "homo_lumo_gap",
+        f"HOMO_LUMO_Gap_Normalized_{state_suffix}": "homo_lumo_gap_normalized",
+        f"Partial_Charge_{state_suffix}": "partial_charge",
+        f"Nucleophilicity_Index_{state_suffix}": "nucleophilicity_index",
+        f"LUMO_Normalized_{state_suffix}": "lumo_normalized",
+    }
+
+    residue_lookup = df["Residue"].astype(str).str.strip().str.upper()
+    for column_name, score_key in field_map.items():
+        df[column_name] = residue_lookup.map(
+            lambda residue: normalized_score_map.get(residue, {}).get(score_key, np.nan)
+        )
+
+    return df
 
 # ============================================================================
 # PARALLEL COMPUTATION WORKER
@@ -930,7 +1048,7 @@ def _compute_aa_reactivity_worker(args):
 # MAIN WORKFLOW
 # ============================================================================
 
-def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_types=3, n_workers=1, use_cache=True, output_base_dir=None):
+def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_types=3, n_workers=1, use_cache=True, output_base_dir=None, use_existing=False):
     """
     Main workflow: 
     1. Determine top N most reactive amino acid TYPES for the electrophile (quantum calculations)
@@ -996,11 +1114,11 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
     use_parallel = n_workers > 1
     if use_parallel:
         print(f"   ⚡ Using parallel execution with {n_workers} workers")
-    
-    if not use_cache:
-        print(f"   🔄 Cache reading DISABLED - forcing recalculation (cache will still be updated)")
     else:
         print(f"   Using sequential execution (use --workers N for parallel)")
+
+    if not use_cache:
+        print(f"   🔄 Cache reading DISABLED - forcing recalculation (cache will still be updated)")
     
     all_warhead_results = {}  # Store results for each warhead
     
@@ -1304,17 +1422,17 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
     
     # Save all nucleophiles for reference
     all_nucleophiles_csv = os.path.join(output_dir, "all_accessibility_nucleophiles.csv")
-    all_nucleophiles.to_csv(all_nucleophiles_csv, index=False)
+    safe_to_csv(all_nucleophiles, all_nucleophiles_csv, index=False)
     print(f"   💾 Saved all nucleophiles to: {all_nucleophiles_csv}")
     
-    # Filter to only accessible nucleophiles for further processing
     all_accessible = all_nucleophiles[all_nucleophiles["Accessible"] == True].copy()
-    
-    if len(all_accessible) == 0:
-        print("⚠️  No accessible nucleophiles found. Exiting.")
+
+    if len(all_nucleophiles) == 0:
+        print("⚠️  No nucleophiles found. Exiting.")
         return
     
     # Strip whitespace and convert to uppercase for case-insensitive matching
+    all_nucleophiles["Residue"] = all_nucleophiles["Residue"].str.strip().str.upper()
     all_accessible["Residue"] = all_accessible["Residue"].str.strip().str.upper()
     
     # Step 3-5: Process results for each warhead
@@ -1327,7 +1445,7 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
         """Run the deprotonation model on a CSV and report the generated file, if any."""
         deprot_dir = os.path.join(script_dir, "DeprotonationScoring")
         deprot_script = os.path.join(deprot_dir, "Deprotonation_Model.py")
-        deprot_model = os.path.join(deprot_dir, "deprot_xgb.pkl")
+        deprot_model = os.path.join(deprot_dir, "deprot_xgb_noapbs.pkl")
         expected_output_csv = os.path.join(
             output_dir,
             f"{os.path.splitext(os.path.basename(input_csv))[0]}_deprot_predictions.csv"
@@ -1405,15 +1523,16 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
         hsab_class = warhead_data["hsab_class"]
         hsab_targets = warhead_data["hsab_targets"]
         
-        # Keep all accessible nucleophiles so residues outside the top reactive types remain visible.
-        # The top-type lists are still used to set binary flags and binary scores.
-        filtered_nucleophiles = all_accessible.copy()
+        # Keep all nucleophiles in the export so training data includes both
+        # accessible and inaccessible residues; accessibility remains a feature.
+        filtered_nucleophiles = all_nucleophiles.copy()
         
         if len(filtered_nucleophiles) == 0:
             print(f"      ⚠️  No accessible nucleophiles found for this warhead")
             continue
         
-        print(f"      Using all {len(filtered_nucleophiles)} accessible nucleophiles for this warhead")
+        accessible_in_export = int(filtered_nucleophiles["Accessible"].sum())
+        print(f"      Using all {len(filtered_nucleophiles)} nucleophiles for this warhead ({accessible_in_export} accessible)")
         
         # Convert scores to numeric, handling 'n/a' and other non-numeric values
         filtered_nucleophiles["Accessibility_Score"] = pd.to_numeric(
@@ -1422,14 +1541,21 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
         
         # Add warhead name and reactivity scores (both protonated and deprotonated)
         filtered_nucleophiles["Warhead"] = warhead_name
-        
-        # Extract reactivity scores for both protonation states
-        filtered_nucleophiles["Reactivity_Score_Protonated"] = filtered_nucleophiles["Residue"].map(
-            lambda res: type_scores_protonated.get(res, {}).get("reactivity_score", 0.0) if isinstance(type_scores_protonated.get(res), dict) else 0.0
+
+        # Extract reactivity components for both protonation states
+        filtered_nucleophiles = attach_reactivity_component_columns(
+            filtered_nucleophiles,
+            type_scores_protonated_upper,
+            "Protonated",
         )
-        filtered_nucleophiles["Reactivity_Score_Deprotonated"] = filtered_nucleophiles["Residue"].map(
-            lambda res: type_scores_deprotonated.get(res, {}).get("reactivity_score", 0.0) if isinstance(type_scores_deprotonated.get(res), dict) else 0.0
+        filtered_nucleophiles = attach_reactivity_component_columns(
+            filtered_nucleophiles,
+            type_scores_deprotonated_upper,
+            "Deprotonated",
         )
+
+        filtered_nucleophiles["Reactivity_Score_Protonated"] = filtered_nucleophiles["Reactivity_Score_Protonated"].fillna(0.0)
+        filtered_nucleophiles["Reactivity_Score_Deprotonated"] = filtered_nucleophiles["Reactivity_Score_Deprotonated"].fillna(0.0)
         
         # Use deprotonated score as primary reactivity score
         filtered_nucleophiles["Reactivity_Score"] = filtered_nucleophiles["Reactivity_Score_Deprotonated"]
@@ -1593,10 +1719,39 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
             }
         }
         
-        # Create separate dataframes for protonated and deprotonated
+        # Create safe filename for this warhead
         warhead_safe_name = warhead_name.replace(" ", "_").replace("(", "").replace(")", "")
-        
-        # Protonated version - KEEP ALL residues, but add binary_reactive column for top N types
+
+        # If requested, try to reuse existing per-warhead CSV outputs instead of recomputing
+        if use_existing:
+            prot_existing = os.path.join(output_dir, f"protonated_ranked_targets_{warhead_safe_name}.csv")
+            deprot_existing = os.path.join(output_dir, f"deprotonated_ranked_targets_{warhead_safe_name}.csv")
+            if os.path.exists(prot_existing) and os.path.exists(deprot_existing):
+                try:
+                    df_protonated_sorted = pd.read_csv(prot_existing)
+                    df_deprotonated_sorted = pd.read_csv(deprot_existing)
+                    print(f"      ↪ Reusing existing per-warhead outputs for {warhead_name}: {prot_existing}, {deprot_existing}")
+                    all_results.append({
+                        "warhead_name": warhead_name,
+                        "protonated": df_protonated_sorted,
+                        "deprotonated": df_deprotonated_sorted,
+                    })
+                    # Minimal stats for reporting
+                    try:
+                        filter_statistics[warhead_name] = {
+                            "total_residues_in_pdb": total_residues_in_pdb,
+                            "total_nucleophiles": total_nucleophiles,
+                            "accessible_nucleophiles": accessible_nucleophiles,
+                            "protonated": {"after_reactivity": 0, "after_orbital": 0, "after_hsab": 0, "final": int(df_protonated_sorted.get('Binary_Score', pd.Series([0])).sum())},
+                            "deprotonated": {"after_reactivity": 0, "after_orbital": 0, "after_hsab": 0, "after_deprotonation": int(df_deprotonated_sorted.shape[0]), "final": int(df_deprotonated_sorted.get('Binary_Score', pd.Series([0])).sum()), "deprotonation_status": "ok"}
+                        }
+                    except Exception:
+                        pass
+                    continue
+                except Exception as e:
+                    print(f"      ⚠️  Could not load existing per-warhead CSVs: {e}; will recompute")
+
+        # Create separate dataframes for protonated and deprotonated
         df_protonated = filtered_nucleophiles.copy()
         df_protonated["Reactivity_Score"] = df_protonated["Reactivity_Score_Protonated"]
         df_protonated["Binary_Reactivity"] = df_protonated["Binary_Reactivity_Protonated"]
@@ -1604,24 +1759,16 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
         df_protonated["Binary_Score"] = df_protonated["Binary_Score_Protonated"]
         df_protonated["Binary_Score_With_HSAB"] = df_protonated["Binary_Score_With_HSAB_Protonated"]
         # Add binary_reactive_protonated column: 1 if residue is in top N types, 0 otherwise
-        df_protonated["binary_reactive_protonated"] = (
-            df_protonated["Residue"].isin(top_types_protonated)
-        ).astype(int)
-        df_protonated["Combined_Score"] = (
-            df_protonated["Accessibility_Score"] * 
-            df_protonated["Reactivity_Score_Protonated"]
-        )
-        df_protonated_sorted = df_protonated.sort_values(
-            by=["Binary_Score", "Binary_Score_With_HSAB", "Combined_Score"], 
-            ascending=[False, False, False]
-        )
+        df_protonated["binary_reactive_protonated"] = (df_protonated["Residue"].isin(top_types_protonated)).astype(int)
+        df_protonated["Combined_Score"] = (df_protonated["Accessibility_Score"] * df_protonated["Reactivity_Score_Protonated"])
+        df_protonated_sorted = df_protonated.sort_values(by=["Binary_Score", "Binary_Score_With_HSAB", "Combined_Score"], ascending=[False, False, False])
         df_protonated_sorted = df_protonated_sorted.rename(columns={"pKa": "Propka pKa"})
         if "Combined_Score" in df_protonated_sorted.columns:
             df_protonated_sorted = df_protonated_sorted.drop(columns=["Combined_Score"])
         protonated_csv = os.path.join(output_dir, f"protonated_ranked_targets_{warhead_safe_name}.csv")
-        df_protonated_sorted.to_csv(protonated_csv, index=False)
+        safe_to_csv(df_protonated_sorted, protonated_csv, index=False)
         print(f"      💾 Saved protonated (all residues with binary_reactive_protonated indicator) to: {protonated_csv}")
-        
+
         # Deprotonated version - KEEP ALL residues, but add binary_reactive column for top N types
         df_deprotonated = filtered_nucleophiles.copy()
         df_deprotonated["Reactivity_Score"] = df_deprotonated["Reactivity_Score_Deprotonated"]
@@ -1629,31 +1776,17 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
         df_deprotonated["Binary_Orbital"] = df_deprotonated["Binary_Orbital_Deprotonated"]
         df_deprotonated["Binary_Score"] = df_deprotonated["Binary_Score_Deprotonated"]
         df_deprotonated["Binary_Score_With_HSAB"] = df_deprotonated["Binary_Score_With_HSAB_Deprotonated"]
-        # Add binary_reactive_deprotonated column: 1 if residue is in top N types, 0 otherwise
-        df_deprotonated["binary_reactive_deprotonated"] = (
-            df_deprotonated["Residue"].isin(top_types_deprotonated)
-        ).astype(int)
-        df_deprotonated["Combined_Score"] = (
-            df_deprotonated["Accessibility_Score"] * 
-            df_deprotonated["Reactivity_Score_Deprotonated"]
-        )
-        df_deprotonated_sorted = df_deprotonated.sort_values(
-            by=["Binary_Score", "Binary_Score_With_HSAB", "Combined_Score"], 
-            ascending=[False, False, False]
-        )
+        df_deprotonated["binary_reactive_deprotonated"] = (df_deprotonated["Residue"].isin(top_types_deprotonated)).astype(int)
+        df_deprotonated["Combined_Score"] = (df_deprotonated["Accessibility_Score"] * df_deprotonated["Reactivity_Score_Deprotonated"])
+        df_deprotonated_sorted = df_deprotonated.sort_values(by=["Binary_Score", "Binary_Score_With_HSAB", "Combined_Score"], ascending=[False, False, False])
         df_deprotonated_sorted = df_deprotonated_sorted.rename(columns={"pKa": "Propka pKa"})
         if "Combined_Score" in df_deprotonated_sorted.columns:
             df_deprotonated_sorted = df_deprotonated_sorted.drop(columns=["Combined_Score"])
         deprotonated_csv = os.path.join(output_dir, f"deprotonated_ranked_targets_{warhead_safe_name}.csv")
-        df_deprotonated_sorted.to_csv(deprotonated_csv, index=False)
+        safe_to_csv(df_deprotonated_sorted, deprotonated_csv, index=False)
         print(f"      💾 Saved deprotonated (all residues with binary_reactive_deprotonated indicator) to: {deprotonated_csv}")
         # Run Deprotonation analysis for the per-warhead ranked deprotonated CSV
-        after_deprotonation_count, after_deprotonation_status = run_deprotonation_analysis(
-            deprotonated_csv,
-            pdb_path,
-            output_dir,
-            f"per-warhead {warhead_safe_name}"
-        )
+        after_deprotonation_count, after_deprotonation_status = run_deprotonation_analysis(deprotonated_csv, pdb_path, output_dir, f"per-warhead {warhead_safe_name}")
 
         # Update filter statistics with deprotonation count (if available)
         try:
@@ -1702,11 +1835,11 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
     
     # Save combined results for both states
     protonated_combined_csv = os.path.join(output_dir, "protonated_ranked_covalent_targets_all_warheads.csv")
-    combined_protonated.to_csv(protonated_combined_csv, index=False)
+    safe_to_csv(combined_protonated, protonated_combined_csv, index=False)
     print(f"\n   💾 Saved combined protonated results to: {protonated_combined_csv}")
     
     deprotonated_combined_csv = os.path.join(output_dir, "deprotonated_ranked_covalent_targets_all_warheads.csv")
-    combined_deprotonated.to_csv(deprotonated_combined_csv, index=False)
+    safe_to_csv(combined_deprotonated, deprotonated_combined_csv, index=False)
     print(f"   💾 Saved combined deprotonated results to: {deprotonated_combined_csv}")
     # Generate extra deprotonation predictions for the combined all-warheads output
     run_deprotonation_analysis(deprotonated_combined_csv, pdb_path, output_dir, "combined all-warheads")
@@ -2472,7 +2605,7 @@ def generate_batch_statistics_csv(batch_results, output_file="batch_filtering_st
     
     # Create DataFrame and save
     df = pd.DataFrame(rows)
-    df.to_csv(output_file, index=False)
+    safe_to_csv(df, output_file, index=False)
     print(f"   💾 Saved batch filtering statistics to: {output_file}")
     print(f"   📊 Total rows: {len(df)}")
 
@@ -2551,7 +2684,98 @@ def get_csv_value(row, *column_names, default=None):
     return default
 
 
-def batch_process(csv_file, pdb_dir=None, pdb_download_dir=None, test_mode=False, n_workers=1, use_cache=True, output_dir=None):
+def write_batch_collective_outputs(batch_output_root, allowed_row_names=None):
+    """Write batch-level combined ranking and deprotonation prediction CSVs from current-run per-row outputs on disk."""
+    protonated_frames = []
+    deprotonated_frames = []
+    deprot_prediction_frames = []
+    allowed_row_names = {str(name).strip() for name in allowed_row_names} if allowed_row_names else None
+
+    if not os.path.isdir(batch_output_root):
+        return []
+
+    for entry in sorted(os.listdir(batch_output_root)):
+        row_output_dir = os.path.join(batch_output_root, entry)
+        if not os.path.isdir(row_output_dir) or not entry.endswith("_output"):
+            continue
+
+        row_name = entry[:-7]
+        if allowed_row_names is not None and row_name not in allowed_row_names:
+            continue
+
+        protonated_path = os.path.join(row_output_dir, "protonated_ranked_covalent_targets_all_warheads.csv")
+        deprotonated_path = os.path.join(row_output_dir, "deprotonated_ranked_covalent_targets_all_warheads.csv")
+        deprot_predictions_path = os.path.join(
+            row_output_dir,
+            "deprotonated_ranked_covalent_targets_all_warheads_deprot_predictions.csv",
+        )
+
+        if os.path.isfile(protonated_path):
+            try:
+                frame = pd.read_csv(protonated_path)
+                frame.insert(0, "Batch_Row", row_name)
+                protonated_frames.append(frame)
+            except Exception as exc:
+                print(f"   ⚠️  Could not read {protonated_path}: {exc}")
+
+        if os.path.isfile(deprotonated_path):
+            try:
+                frame = pd.read_csv(deprotonated_path)
+                frame.insert(0, "Batch_Row", row_name)
+                deprotonated_frames.append(frame)
+            except Exception as exc:
+                print(f"   ⚠️  Could not read {deprotonated_path}: {exc}")
+
+        if os.path.isfile(deprot_predictions_path):
+            try:
+                frame = pd.read_csv(deprot_predictions_path)
+                frame.insert(0, "Batch_Row", row_name)
+                deprot_prediction_frames.append(frame)
+            except Exception as exc:
+                print(f"   ⚠️  Could not read {deprot_predictions_path}: {exc}")
+
+    outputs_written = []
+
+    if protonated_frames:
+        combined_protonated = pd.concat(protonated_frames, ignore_index=True)
+        sort_cols = [col for col in ["Combined_Score", "Binary_Score_With_HSAB", "Binary_Score"] if col in combined_protonated.columns]
+        if sort_cols:
+            combined_protonated = combined_protonated.sort_values(sort_cols, ascending=False, kind="mergesort")
+        protonated_out = os.path.join(batch_output_root, "batch_protonated_ranked_covalent_targets_all_warheads.csv")
+        safe_to_csv(combined_protonated, protonated_out, index=False)
+        outputs_written.append(protonated_out)
+        print(f"   💾 Saved batch protonated collective to: {protonated_out}")
+
+    if deprotonated_frames:
+        combined_deprotonated = pd.concat(deprotonated_frames, ignore_index=True)
+        sort_cols = [col for col in ["Combined_Score", "Binary_Score_With_HSAB", "Binary_Score"] if col in combined_deprotonated.columns]
+        if sort_cols:
+            combined_deprotonated = combined_deprotonated.sort_values(sort_cols, ascending=False, kind="mergesort")
+        deprotonated_out = os.path.join(batch_output_root, "batch_deprotonated_ranked_covalent_targets_all_warheads.csv")
+        safe_to_csv(combined_deprotonated, deprotonated_out, index=False)
+        outputs_written.append(deprotonated_out)
+        print(f"   💾 Saved batch deprotonated collective to: {deprotonated_out}")
+
+    if deprot_prediction_frames:
+        combined_deprot_predictions = pd.concat(deprot_prediction_frames, ignore_index=True)
+        sort_cols = [col for col in ["Batch_Row", "Warhead", "Ranked_Success_Deprotonated", "deprotonation_prob"] if col in combined_deprot_predictions.columns]
+        if sort_cols:
+            sort_ascending = []
+            for column_name in sort_cols:
+                sort_ascending.append(column_name in {"Batch_Row", "Warhead", "Ranked_Success_Deprotonated"})
+            combined_deprot_predictions = combined_deprot_predictions.sort_values(sort_cols, ascending=sort_ascending, kind="mergesort")
+        deprot_predictions_out = os.path.join(
+            batch_output_root,
+            "batch_deprotonated_ranked_covalent_targets_all_warheads_deprot_predictions.csv",
+        )
+        safe_to_csv(combined_deprot_predictions, deprot_predictions_out, index=False)
+        outputs_written.append(deprot_predictions_out)
+        print(f"   💾 Saved batch deprotonation predictions collective to: {deprot_predictions_out}")
+
+    return outputs_written
+
+
+def batch_process(csv_file, pdb_dir=None, pdb_download_dir=None, test_mode=False, n_workers=1, use_cache=True, output_dir=None, use_existing=False):
     """
     Process multiple protein-electrophile pairs from a CSV file.
     
@@ -2778,6 +3002,7 @@ def batch_process(csv_file, pdb_dir=None, pdb_download_dir=None, test_mode=False
                 n_workers,
                 use_cache,
                 output_base_dir=output_dir,
+                use_existing=use_existing,
             )
             if result is not None:
                 # Extract results from dictionary
@@ -2849,8 +3074,12 @@ def batch_process(csv_file, pdb_dir=None, pdb_download_dir=None, test_mode=False
             continue
     
     # Generate batch statistics CSV
+    batch_output_root = output_dir if output_dir else os.getcwd()
     if len(batch_results) > 0:
-        batch_csv_path = os.path.join(output_dir, "batch_filtering_statistics.csv") if output_dir else os.path.join(os.path.dirname(csv_file), "batch_filtering_statistics.csv")
+        write_batch_collective_outputs(batch_output_root, allowed_row_names=df["name"].astype(str).tolist())
+
+    if len(batch_results) > 0:
+        batch_csv_path = os.path.join(batch_output_root, "batch_filtering_statistics.csv")
         generate_batch_statistics_csv(batch_results, batch_csv_path, test_mode)
     
     # Print summary
@@ -2924,6 +3153,7 @@ if __name__ == "__main__":
         output_dir = None
         n_workers = 1  # default sequential
         use_cache = True  # default use cache
+        use_existing = False
         
         # Parse optional arguments
         i = 3
@@ -2943,6 +3173,9 @@ if __name__ == "__main__":
                     print(f"Creating batch output directory: {output_dir}")
                     os.makedirs(output_dir, exist_ok=True)
                 i += 2
+            elif sys.argv[i] == '--reuse-existing':
+                use_existing = True
+                i += 1
             elif sys.argv[i] in ['--workers', '-j'] and i + 1 < len(sys.argv):
                 n_workers = int(sys.argv[i + 1])
                 i += 2
@@ -2953,7 +3186,7 @@ if __name__ == "__main__":
                 print(f"Unknown argument: {sys.argv[i]}")
                 sys.exit(1)
         
-        batch_process(csv_file, pdb_dir, pdb_download_dir, test_mode, n_workers, use_cache, output_dir)
+        batch_process(csv_file, pdb_dir, pdb_download_dir, test_mode, n_workers, use_cache, output_dir, use_existing=use_existing)
     
     # Single mode
     elif len(sys.argv) >= 3:
@@ -2964,6 +3197,7 @@ if __name__ == "__main__":
         n_workers = 1  # default sequential
         use_cache = True  # default use cache
         output_dir = None
+        use_existing = False
         # Check for --workers or -j flag and --no-cache flag
         i = 5
         while i < len(sys.argv):
@@ -2978,6 +3212,9 @@ if __name__ == "__main__":
                 if not os.path.exists(output_dir):
                     os.makedirs(output_dir, exist_ok=True)
                 i += 2
+            elif sys.argv[i] == '--reuse-existing':
+                use_existing = True
+                i += 1
             else:
                 i += 1
 
@@ -2992,7 +3229,7 @@ if __name__ == "__main__":
             print(f"❌ Error: PDB file not found: {pdb_file}")
             sys.exit(1)
 
-        main(resolved_pdb_file, electrophile_smiles, output_prefix, top_n_types, n_workers, use_cache, output_base_dir=output_dir)
+        main(resolved_pdb_file, electrophile_smiles, output_prefix, top_n_types, n_workers, use_cache, output_base_dir=output_dir, use_existing=use_existing)
     
     # No valid arguments - show help
     else:

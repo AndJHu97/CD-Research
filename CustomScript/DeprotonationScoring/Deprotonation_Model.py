@@ -20,6 +20,7 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -47,9 +48,77 @@ REFERENCE_PKA = {
     "THR": 13.6,
 }
 
+# Target atoms per residue for distance-based neighborhood.
+# Ordered from most side-chain distal to most proximal so incomplete residues
+# can still contribute a reasonable center atom instead of failing outright.
+TARGET_ATOMS = {
+    "ALA": ["CA"],
+    "ARG": ["CZ", "NH1", "NH2", "NE", "CD", "CG", "CB", "CA"],
+    "ASN": ["CA"],
+    "ASP": ["OD1", "OD2", "CG", "CB", "CA"],
+    "CYS": ["SG", "CB", "CA"],
+    "GLN": ["CA"],
+    "GLU": ["OE1", "OE2", "CD", "CG", "CB", "CA"],
+    "GLY": ["CA"],
+    "HIS": ["ND1", "NE2", "CE1", "CD2", "CG", "CB", "CA"],
+    "ILE": ["CA"],
+    "LEU": ["CA"],
+    "LYS": ["NZ", "CE", "CD", "CG", "CB", "CA"],
+    "MET": ["CA"],
+    "PHE": ["CA"],
+    "PRO": ["CA"],
+    "SER": ["OG", "CB", "CA"],
+    "THR": ["OG1", "CG2", "CB", "CA"],
+    "TRP": ["CA"],
+    "TYR": ["OH", "CZ", "CE1", "CE2", "CD1", "CD2", "CG", "CB", "CA"],
+    "VAL": ["CA"],
+}
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 APBS_SCRIPT = os.path.join(SCRIPT_DIR, "APBS_Deprotonation.py")
 HBOND_SCRIPT = os.path.join(SCRIPT_DIR, "HBonds_Score.py")
+PREDICTION_CACHE_FILE = os.path.join(SCRIPT_DIR, "deprotonation_prediction_cache.json")
+
+
+def load_prediction_cache() -> Dict[str, dict]:
+    if os.path.isfile(PREDICTION_CACHE_FILE):
+        try:
+            with open(PREDICTION_CACHE_FILE, "r") as f:
+                data = json.load(f)
+                return data if isinstance(data, dict) else {}
+        except Exception as exc:
+            print(f"[cache] Could not load prediction cache: {exc}")
+    return {}
+
+
+def save_prediction_cache(cache: Dict[str, dict]) -> None:
+    try:
+        with open(PREDICTION_CACHE_FILE, "w") as f:
+            json.dump(cache, f, indent=2)
+    except Exception as exc:
+        print(f"[cache] Could not save prediction cache: {exc}")
+
+
+def make_prediction_cache_key(pdb_path: str, chain: str, resname: str, resseq: int,
+                              model_path: str, apbs_radius: float, hbond_radius: float,
+                              ph: float, use_apbs: bool) -> str:
+    pdb_path_abs = os.path.abspath(pdb_path)
+    model_path_abs = os.path.abspath(model_path)
+    pdb_mtime = os.path.getmtime(pdb_path_abs) if os.path.exists(pdb_path_abs) else 0.0
+    model_mtime = os.path.getmtime(model_path_abs) if os.path.exists(model_path_abs) else 0.0
+    return "|".join([
+        pdb_path_abs,
+        f"pdb_mtime={pdb_mtime}",
+        str(chain).strip().upper(),
+        str(resname).strip().upper(),
+        str(int(resseq)),
+        os.path.basename(model_path_abs),
+        f"model_mtime={model_mtime}",
+        f"apbs_radius={float(apbs_radius)}",
+        f"hbond_radius={float(hbond_radius)}",
+        f"ph={float(ph)}",
+        f"use_apbs={int(bool(use_apbs))}",
+    ])
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +171,96 @@ def extract_and_renumber_model1(pdb_path: str, out_path: str) -> None:
                     line = f"{line[:6]}{serial:5d}{line[11:]}"
                     serial += 1
                 f_out.write(line)
+
+
+# ---------------------------------------------------------------------------
+# PDB atom helpers (copied from training script so this module is standalone)
+# ---------------------------------------------------------------------------
+
+def parse_pdb_atoms(pdb_path: str):
+    atoms = []
+    with open(pdb_path) as f:
+        for line in f:
+            if not line.startswith(("ATOM", "HETATM")):
+                continue
+            try:
+                atoms.append({
+                    "record": line[0:6].strip(),
+                    "serial": int(line[6:11]),
+                    "name": line[12:16].strip(),
+                    "alt": line[16].strip(),
+                    "resname": line[17:20].strip(),
+                    "chain": line[21].strip(),
+                    "resseq": int(line[22:26]),
+                    "icode": line[26].strip(),
+                    "x": float(line[30:38]),
+                    "y": float(line[38:46]),
+                    "z": float(line[46:54]),
+                })
+            except (ValueError, IndexError):
+                continue
+    return atoms
+
+
+def find_target_atom(atoms, chain: str, resname: str, resseq: int):
+    target_atoms = TARGET_ATOMS.get(resname.upper(), ["CA"])
+
+    # Prefer the most distal available atom in the residue-specific list.
+    for preferred_name in target_atoms:
+        preferred_name_u = preferred_name.upper()
+        for atom in atoms:
+            chain_match = (chain is None) or (atom["chain"] == chain)
+            if (
+                chain_match
+                and atom["resname"].upper() == resname.upper()
+                and atom["resseq"] == resseq
+                and atom["name"].upper() == preferred_name_u
+            ):
+                return atom
+
+    # Final fallback: use any atom from the residue instead of returning null.
+    for atom in atoms:
+        chain_match = (chain is None) or (atom["chain"] == chain)
+        if chain_match and atom["resname"].upper() == resname.upper() and atom["resseq"] == resseq:
+            return atom
+    return None
+
+
+def get_sphere_atoms(atoms, center_xyz, radius: float):
+    cx, cy, cz = center_xyz
+    result = []
+    for atom in atoms:
+        dx = atom["x"] - cx
+        dy = atom["y"] - cy
+        dz = atom["z"] - cz
+        if (dx * dx + dy * dy + dz * dz) <= radius * radius:
+            result.append(atom)
+    return result
+
+
+def compute_charged_residue_counts(pdb_path: str, chain: str, resname: str, resseq: int, radius: float) -> Dict[str, float]:
+    atoms = parse_pdb_atoms(pdb_path)
+    if not atoms:
+        raise RuntimeError(f"No ATOM records found in {pdb_path}")
+    atoms = [atom for atom in atoms if atom["alt"] in ("", "A")]
+    target = find_target_atom(atoms, chain, resname, resseq)
+    if target is None:
+        raise RuntimeError(f"Could not find target atom for {chain}:{resname}:{resseq}")
+    nuc_xyz = (target["x"], target["y"], target["z"])
+    sphere_atoms = get_sphere_atoms(atoms, nuc_xyz, radius)
+    sphere_residues = {(atom["chain"], atom["resname"], atom["resseq"]) for atom in sphere_atoms}
+    counts = {"arg_count": 0, "lys_count": 0, "asp_count": 0, "glu_count": 0}
+    for _, residue_name, _ in sphere_residues:
+        residue_name_u = residue_name.upper()
+        if residue_name_u == "ARG":
+            counts["arg_count"] += 1
+        elif residue_name_u == "LYS":
+            counts["lys_count"] += 1
+        elif residue_name_u == "ASP":
+            counts["asp_count"] += 1
+        elif residue_name_u == "GLU":
+            counts["glu_count"] += 1
+    return counts
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +436,10 @@ def build_features(pdb_path: str, chain: str, resname: str, resseq: int,
     if use_apbs:
         apbs = run_apbs(clean_pdb, residue_spec, apbs_radius, ph)
     else:
+        # Provide electrostatic_potential as NaN when APBS is skipped so
+        # pipelines trained with APBS features don't error on missing columns.
         apbs = {
+            "electrostatic_potential": np.nan,
             **get_charged_residue_counts(clean_pdb, chain, resseq, resname, apbs_radius),
         }
     hbonds = run_hbonds(clean_pdb, residue_spec, hbond_radius)
@@ -290,8 +452,8 @@ def build_features(pdb_path: str, chain: str, resname: str, resseq: int,
         "resname": resname,
     }
 
-    if not use_apbs:
-        features.pop("electrostatic_potential", None)
+    # keep electrostatic_potential present (may be NaN) so models trained
+    # with APBS still accept this feature set when APBS is disabled
 
     print("\n[features] Computed features:")
     for k, v in features.items():
@@ -316,6 +478,7 @@ def run_analyze(args, pipeline):
     import warnings
 
     df = pd.read_csv(args.analyze)
+    prediction_cache = load_prediction_cache()
 
     required = {"Residue", "Chain", "ResNum"}
     missing = required - set(df.columns)
@@ -335,8 +498,32 @@ def run_analyze(args, pipeline):
         resname = str(row["Residue"]).strip().upper()
         resseq  = int(re.sub(r'[^0-9-]', '', str(row["ResNum"]).strip()))
         spec    = f"{chain}:{resname}:{resseq}"
+        cache_key = make_prediction_cache_key(
+            pdb_path,
+            chain,
+            resname,
+            resseq,
+            args.model,
+            args.apbs_radius,
+            args.hbond_radius,
+            args.ph,
+            not args.no_apbs,
+        )
 
         print(f"[analyze] ({idx + 1}/{len(df)}) {spec}")
+        cached_row = prediction_cache.get(cache_key)
+        if cached_row is not None:
+            print(f"[cache] Reusing cached deprotonation output for {spec}")
+            deprotonation_prob.append(cached_row.get("deprotonation_prob", np.nan))
+            estimated_pka_list.append(cached_row.get("estimated_pKa", np.nan))
+            pka_shift_list.append(cached_row.get("pKa_shift", np.nan))
+            for column_name, value in cached_row.items():
+                if column_name not in df.columns:
+                    df.loc[idx, column_name] = value
+                else:
+                    df.at[idx, column_name] = value
+            continue
+
         try:
             X    = build_features(pdb_path, chain, resname, resseq,
                                    args.apbs_radius, args.hbond_radius, args.ph, use_apbs=not args.no_apbs)
@@ -349,6 +536,14 @@ def run_analyze(args, pipeline):
             deprotonation_prob.append(prob)
             estimated_pka_list.append(round(est_pka, 4))
             pka_shift_list.append(round(shift, 4) if not np.isnan(shift) else np.nan)
+
+            cached_row = row.to_dict()
+            cached_row.update({
+                "deprotonation_prob": prob,
+                "estimated_pKa": round(est_pka, 4),
+                "pKa_shift": round(shift, 4) if not np.isnan(shift) else np.nan,
+            })
+            prediction_cache[cache_key] = cached_row
 
         except Exception as exc:
             warnings.warn(f"[analyze] Failed for {spec}: {exc}")
@@ -446,6 +641,8 @@ def run_analyze(args, pipeline):
 
     # Drop helper columns
     df = df.drop(columns=[c for c in df.columns if c.startswith("_sort")])
+
+    save_prediction_cache(prediction_cache)
 
     # --- Output ---
     out_dir  = args.out_dir if args.out_dir else os.path.dirname(os.path.abspath(args.analyze))

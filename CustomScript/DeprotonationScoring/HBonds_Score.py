@@ -16,26 +16,26 @@ import math
 
 
 TARGET_ATOM = {
-    "ALA": "CA",  # Non-reactive: use CA as center
-    "ARG": "CA",  # Non-reactive: use CA as center
-    "ASN": "CA",  # Non-reactive: use CA as center
-    "ASP": "CA",  # Non-reactive: use CA as center
-    "CYS": "SG",  # Reactive sulfur
-    "GLN": "CA",  # Non-reactive: use CA as center
-    "GLU": "CA",  # Non-reactive: use CA as center
-    "GLY": "CA",  # Non-reactive: use CA as center
-    "HIS": "ND1", # Reactive N (pyridine-type)
-    "ILE": "CA",  # Non-reactive: use CA as center
-    "LEU": "CA",  # Non-reactive: use CA as center
-    "LYS": "NZ",  # Reactive N (protonated)
-    "MET": "CA",  # Non-reactive: use CA as center
-    "PHE": "CA",  # Non-reactive: use CA as center
-    "PRO": "CA",  # Non-reactive: use CA as center
-    "SER": "OG",  # Reactive O
-    "THR": "OG1", # Reactive O
-    "TRP": "CA",  # Non-reactive: use CA as center
-    "TYR": "OH",  # Reactive O
-    "VAL": "CA",  # Non-reactive: use CA as center
+	"ALA": ["CA"],
+	"ARG": ["CZ", "NH1", "NH2", "NE", "CD", "CG", "CB", "CA"],
+	"ASN": ["OD1", "ND2", "CG", "CB", "CA"],
+	"ASP": ["OD1", "OD2", "CG", "CB", "CA"],
+	"CYS": ["SG", "CB", "CA"],
+	"GLN": ["OE1", "NE2", "CD", "CG", "CB", "CA"],
+	"GLU": ["OE1", "OE2", "CD", "CG", "CB", "CA"],
+	"GLY": ["CA"],
+	"HIS": ["ND1", "NE2", "CE1", "CD2", "CG", "CB", "CA"],
+	"ILE": ["CA"],
+	"LEU": ["CA"],
+	"LYS": ["NZ", "CE", "CD", "CG", "CB", "CA"],
+	"MET": ["SD", "CG", "CB", "CA"],
+	"PHE": ["CA"],
+	"PRO": ["CA"],
+	"SER": ["OG", "CB", "CA"],
+	"THR": ["OG1", "CG2", "CB", "CA"],
+	"TRP": ["CA"],
+	"TYR": ["OH", "CZ", "CE1", "CE2", "CD1", "CD2", "CG", "CB", "CA"],
+	"VAL": ["CA"],
 }
 
 DONOR_ATOMS = {
@@ -97,6 +97,14 @@ def find_atom(atoms, chain, resname, resseq, atom_name):
 		if chain_match and a["resname"].upper() == resname.upper() and a["resseq"] == resseq:
 			if a["name"].upper() == atom_name.upper():
 				return a
+	return None
+
+
+def find_preferred_atom(atoms, chain, resname, resseq, atom_names):
+	for atom_name in atom_names:
+		atom = find_atom(atoms, chain, resname, resseq, atom_name)
+		if atom is not None:
+			return atom
 	return None
 
 
@@ -164,11 +172,15 @@ def in_forward_cone(center, direction, point, cone_cos):
 
 def compute_hbond_scores(atoms, target_chain, target_resname, target_resseq, radius,
 						 cone_cos, r0, sigma, strict_max, weak_max):
-	reactive_atom_name = TARGET_ATOM[target_resname]
-	reactive = find_atom(atoms, target_chain, target_resname, target_resseq, reactive_atom_name)
+	reactive_atom_names = TARGET_ATOM[target_resname]
+	reactive = find_preferred_atom(atoms, target_chain, target_resname, target_resseq, reactive_atom_names)
 	ca = find_atom(atoms, target_chain, target_resname, target_resseq, "CA")
+	if reactive is None:
+		reactive = ca
+	if ca is None:
+		ca = reactive
 	if reactive is None or ca is None:
-		raise ValueError("Target residue is missing CA or reactive atom.")
+		raise ValueError("Target residue is missing CA or a fallback reactive atom.")
 
 	reactive_xyz = (reactive["x"], reactive["y"], reactive["z"])
 	reactive_vec = normalize(vec(ca, reactive))

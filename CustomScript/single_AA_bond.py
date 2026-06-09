@@ -50,10 +50,11 @@ REACTIVE_SMARTS = "[C]=[C]-C(=O)"           # example SMARTS to find reactive ca
 # Delta E won't mean anything unless if I can do specifically for bond. Even if so, it ignores all the environment and entropy
 WEIGHTS = {
     "deltaE": 0.0,
-    "lumo":   0.1,
-    "fukui":  0.4,
-    "lg":     0.1,
-    "homo_lumo_gap": 0.4
+    "lumo":   0.05,
+    "fukui":  0.3,
+    "lg":     0.05,
+    "homo_lumo_gap": 0.3,
+    "nucleophilicity_index": 0.3
 }
 ALPHA = 5.0
 BETA = 0.0
@@ -93,7 +94,44 @@ def write_xyz(mol, path):
             pos = conf.GetAtomPosition(i)
             fh.write(f"{a.GetSymbol()} {pos.x:.6f} {pos.y:.6f} {pos.z:.6f}\n")
 
-def run_xtb_xyz(xyz_path, charge=0, nproc=1, gbsa=None, opt=True):
+
+def parse_charges_from_stdout(text):
+    """Try to recover atomic charges from xTB stdout when no charges file is present."""
+    charges = []
+    in_charge_section = False
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        lower_line = line.lower()
+
+        if "mulliken charges" in lower_line or "mulliken population" in lower_line:
+            in_charge_section = True
+            continue
+
+        if not in_charge_section:
+            continue
+
+        if not line or set(line) <= {"-"}:
+            continue
+
+        if "total energy" in lower_line or "homo" in lower_line or "lumo" in lower_line:
+            break
+
+        tokens = line.split()
+        if len(tokens) < 3:
+            continue
+
+        if not tokens[0].isdigit():
+            continue
+
+        try:
+            charges.append(float(tokens[-1]))
+        except ValueError:
+            continue
+
+    return charges
+
+def run_xtb_xyz(xyz_path, charge=0, nproc=1, gbsa=None, opt=True, workdir_root=None, keep_workdir=False):
     """
     Run xTB on the xyz file and parse:
       - Total energy (hartree)
@@ -103,16 +141,31 @@ def run_xtb_xyz(xyz_path, charge=0, nproc=1, gbsa=None, opt=True):
     """
     import subprocess, tempfile, shutil, os, re
 
-    workdir = tempfile.mkdtemp(prefix="xtb_")
-    shutil.copy(xyz_path, os.path.join(workdir, os.path.basename(xyz_path)))
+    if keep_workdir:
+        if workdir_root is None:
+            workdir_root = os.path.join(os.getcwd(), "xtb_runs")
+        os.makedirs(workdir_root, exist_ok=True)
+        workdir = tempfile.mkdtemp(prefix="xtb_", dir=workdir_root)
+        cleanup_workdir = False
+    else:
+        workdir = tempfile.TemporaryDirectory(prefix="xtb_")
+        cleanup_workdir = True
+
+    workdir_path = workdir if isinstance(workdir, str) else workdir.name
+    print(f"xTB workdir: {workdir_path}")
+    shutil.copy(xyz_path, os.path.join(workdir_path, os.path.basename(xyz_path)))
     cmd = [XTBCMD, os.path.basename(xyz_path), "--gfn", "2", "--charge", str(charge)]
     if opt:
         cmd.append("--opt")
     if gbsa:
         cmd += ["--gbsa", gbsa]
 
-    proc = subprocess.run(cmd, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    proc = subprocess.run(cmd, cwd=workdir_path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     out = proc.stdout
+
+    stdout_log = os.path.join(workdir_path, "xtb_stdout.log")
+    with open(stdout_log, "w", encoding="utf-8") as handle:
+        handle.write(out)
 
     energy = None
     homo = None
@@ -141,7 +194,7 @@ def run_xtb_xyz(xyz_path, charge=0, nproc=1, gbsa=None, opt=True):
                 lumo = float(m.group(1))
 
     # --- Parse Mulliken charges ---
-    charge_file = os.path.join(workdir, "charges")
+    charge_file = os.path.join(workdir_path, "charges")
     if os.path.exists(charge_file):
         with open(charge_file) as fh:
             for line in fh:
@@ -151,16 +204,28 @@ def run_xtb_xyz(xyz_path, charge=0, nproc=1, gbsa=None, opt=True):
                 except:
                     continue
     else:
-        for line in out.splitlines():
-            if line.startswith("ATOM") and "CHARGE" in line:
-                tokens = line.split()
-                try:
-                    charges.append(float(tokens[-1]))
-                except:
-                    continue
+        charges = parse_charges_from_stdout(out)
+
+    run_info_path = os.path.join(workdir_path, "xtb_run_info.txt")
+    try:
+        with open(run_info_path, "w", encoding="utf-8") as handle:
+            handle.write(f"command: {' '.join(cmd)}\n")
+            handle.write(f"returncode: {proc.returncode}\n")
+            handle.write(f"workdir: {workdir_path}\n")
+            handle.write(f"stdout_log: {stdout_log}\n")
+            handle.write(f"charge_file_exists: {os.path.exists(charge_file)}\n")
+            handle.write("workdir_contents:\n")
+            for entry in sorted(os.listdir(workdir_path)):
+                handle.write(f"  {entry}\n")
+    except Exception:
+        pass
 
     # --- cleanup ---
-    shutil.rmtree(workdir)
+    if keep_workdir and not cleanup_workdir:
+        pass
+
+    if cleanup_workdir:
+        workdir.cleanup()
 
     # --- sanity checks ---
     if energy is None:
@@ -168,7 +233,9 @@ def run_xtb_xyz(xyz_path, charge=0, nproc=1, gbsa=None, opt=True):
     if homo is None or lumo is None:
         print("Warning: HOMO/LUMO not found; check xTB output")
     if not charges:
-        print("Warning: Charges not found; check xTB output")
+        print(f"Warning: Charges not found; check xTB output in {workdir_path}")
+        print(f"   xTB stdout saved to: {stdout_log}")
+        print(f"   xTB run info saved to: {run_info_path}")
 
     return {"energy": energy, "homo": homo, "lumo": lumo, "charges": charges, "raw": out}
 
