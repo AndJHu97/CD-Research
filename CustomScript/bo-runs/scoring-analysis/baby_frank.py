@@ -10,7 +10,8 @@ score filter) on a training CSV against a labels CSV to report:
   - Per-filter failure counts
   - Per-filter average absolute and relative search-space reduction
   - Average total search-space reduction
-  - Per-(Name × Warhead × Target) row-level output CSV
+  - Per-label row-level output CSV (one hit max per electrophile target site)
+  - Optional --warhead_comparison for per-(Name × Warhead × Target) analysis
 
 FILTER TYPES
 ────────────
@@ -33,6 +34,27 @@ A label matches a training row if:
     - At least one warhead in Frankenstein_Warhead matches the training Warhead
       (case-insensitive, stripped)
 If no warhead matches, that label is counted as a mismatch (not a miss).
+
+HIT COUNTING (default)
+──────────────────────
+By default, hit rate is computed per label (Name + Residue + ResNum + Chain).
+An electrophile may have multiple matching warheads in training, but it can
+contribute at most one hit: the label is a hit if ANY matching warhead's filter
+pipeline keeps the target residue alive. Detail-row search-space reduction
+values are averaged across all matching warhead evaluations for that label.
+
+Summary search-space reduction (per-filter and total averages) is always
+computed from warhead-level evaluations in both modes. Only hit-rate counting
+differs between default and --warhead-comparison.
+
+Use --warhead-comparison to restore per-(label × warhead) hit counting and
+per-warhead detail output.
+
+Use --perfect-match when a label lists multiple Frankenstein warheads: every
+warhead present in both the label and training must keep the target residue
+alive for the label to count as a hit. Label warheads missing from training
+are ignored (e.g. label 4/4, training 3/4 → only those 3 must hit).
+Default counts a hit if any matched warhead succeeds.
 
 SEARCH SPACE REDUCTION
 ──────────────────────
@@ -296,12 +318,12 @@ def download_pdb(pdb_id: str, pdb_dir: str) -> str:
     os.makedirs(pdb_dir, exist_ok=True)
     url      = RCSB_DOWNLOAD_URL.format(pdb_id=pdb_id.upper())
     out_path = os.path.join(pdb_dir, f"{pdb_id.upper()}.pdb")
-    print(f"[INFO] Downloading PDB {pdb_id.upper()} from {url} ...")
+    #print(f"[INFO] Downloading PDB {pdb_id.upper()} from {url} ...")
     try:
         urllib.request.urlretrieve(url, out_path)
     except Exception as e:
         sys.exit(f"[ERROR] Failed to download PDB {pdb_id}: {e}")
-    print(f"[INFO] Saved to {out_path}")
+    #print(f"[INFO] Saved to {out_path}")
     return out_path
 
 
@@ -372,6 +394,123 @@ def parse_frankenstein_warheads(raw) -> set[str]:
 
 def warhead_matches(label_wh_set: set[str], train_wh: str) -> bool:
     return norm(train_wh) in label_wh_set
+
+
+def label_key(name, residue, res_num, chain) -> tuple[str, str, str, str]:
+    return (
+        str(name).strip().upper(),
+        str(residue).strip().upper(),
+        str(res_num).strip(),
+        str(chain).strip(),
+    )
+
+
+def _average_reduction_fields(rows: list[dict]) -> dict[str, object]:
+    """Average Abs/Rel reduction columns across warhead-level rows."""
+    if not rows:
+        return {}
+
+    reduction_keys = {
+        key
+        for row in rows
+        for key in row
+        if key.endswith("_AbsReduction")
+        or key.endswith("_RelReduction")
+        or key in {"Total_AbsReduction", "Total_RelReduction"}
+    }
+    passed_keys = {
+        key
+        for row in rows
+        for key in row
+        if key.endswith("_Passed")
+    }
+
+    averaged: dict[str, object] = {}
+    for key in reduction_keys:
+        vals = [
+            float(row[key])
+            for row in rows
+            if row.get(key) is not None and not pd.isna(row.get(key))
+        ]
+        averaged[key] = round(float(np.mean(vals)), 4) if vals else None
+
+    for key in passed_keys:
+        vals = [row.get(key) for row in rows if row.get(key) is not None]
+        averaged[key] = any(vals) if vals else None
+
+    return averaged
+
+
+def aggregate_label_detail_rows(
+    detail_rows: list[dict],
+    perfect_match: bool = False,
+) -> list[dict]:
+    """Collapse warhead-level rows to one row per label (electrophile target site).
+
+    By default a label counts as a hit if any matching warhead's filter pipeline
+    keeps the target residue alive. With perfect_match, labels that list multiple
+    Frankenstein warheads require every training-matched warhead to hit.
+    Search-space reduction columns are averaged across all matching warhead
+    evaluations for that label.
+    """
+    from collections import defaultdict
+
+    groups: dict[tuple[str, str, str, str], list[dict]] = defaultdict(list)
+    for row in detail_rows:
+        key = label_key(row["Name"], row["Residue"], row["ResNum"], row["Chain"])
+        groups[key].append(row)
+
+    aggregated: list[dict] = []
+    for key in sorted(groups):
+        rows = groups[key]
+        if any(r.get("Is_Mismatch") for r in rows):
+            rep = rows[0]
+            agg = dict(rep)
+            agg["Matched_Warheads"] = ""
+            agg["Hitting_Warheads"] = ""
+            aggregated.append(agg)
+            continue
+
+        hitting = [r["Warhead"] for r in rows if r.get("Hit")]
+        matched = sorted({r["Warhead"] for r in rows})
+        label_wh_count = int(rows[0].get("Label_Warhead_Count", 1) or 1)
+        if perfect_match and label_wh_count > 1:
+            label_hit = all(r.get("Hit") for r in rows)
+        else:
+            label_hit = bool(hitting)
+
+        miss_rows = [r for r in rows if not r.get("Hit")]
+        rep = miss_rows[0] if miss_rows else rows[0]
+        agg = dict(rep)
+        agg.update(_average_reduction_fields(rows))
+        agg["Warhead"] = ",".join(matched)
+        agg["Matched_Warheads"] = ",".join(matched)
+        agg["Hitting_Warheads"] = ",".join(sorted(hitting))
+        agg["Hit"] = label_hit
+        if label_hit:
+            agg["Miss_Reason"] = None
+            agg["Failing_Filter"] = None
+        elif perfect_match and label_wh_count > 1 and hitting:
+            agg["Miss_Reason"] = "partial_warhead_miss"
+            agg["Failing_Filter"] = rep.get("Failing_Filter")
+        else:
+            agg["Miss_Reason"] = rep.get("Miss_Reason")
+            agg["Failing_Filter"] = rep.get("Failing_Filter")
+        aggregated.append(agg)
+
+    return aggregated
+
+
+def annotate_warhead_detail_rows(detail_rows: list[dict]) -> list[dict]:
+    """Add Matched/Hitting warhead columns for per-warhead comparison mode."""
+    annotated = []
+    for row in detail_rows:
+        copy = dict(row)
+        wh = copy.get("Warhead", "")
+        copy["Matched_Warheads"] = wh
+        copy["Hitting_Warheads"] = wh if copy.get("Hit") else ""
+        annotated.append(copy)
+    return annotated
 
 
 # ─────────────────────────────────────────────────────────────
@@ -487,6 +626,8 @@ def run_analysis(
     pdb_dir:             Optional[str],
     output_detail:       Optional[str],
     output_summary:      Optional[str],
+    warhead_comparison:  bool = False,
+    perfect_match:       bool = False,
 ) -> None:
 
     # ── Build ordered filter list ─────────────────────────────────────────
@@ -599,30 +740,34 @@ def run_analysis(
         matched_whs   = wh_set & train_whs
         unmatched_whs = wh_set - train_whs
 
+        label_wh_count = len(wh_set)
+
         if not matched_whs:
             label_entries.append({
-                "name":         name,
-                "residue":      res,
-                "res_num":      res_num,
-                "chain":        chain,
-                "electrophile": elec,
-                "warhead":      ",".join(sorted(wh_set)) if wh_set else "unknown",
-                "matched_wh":   None,
-                "is_mismatch":  True,
-                "pdb_id":       pdb_id,
+                "name":             name,
+                "residue":          res,
+                "res_num":          res_num,
+                "chain":            chain,
+                "electrophile":     elec,
+                "warhead":          ",".join(sorted(wh_set)) if wh_set else "unknown",
+                "matched_wh":       None,
+                "is_mismatch":      True,
+                "pdb_id":           pdb_id,
+                "label_wh_count":   label_wh_count,
             })
         else:
             for wh in sorted(matched_whs):
                 label_entries.append({
-                    "name":         name,
-                    "residue":      res,
-                    "res_num":      res_num,
-                    "chain":        chain,
-                    "electrophile": elec,
-                    "warhead":      wh,
-                    "matched_wh":   wh,
-                    "is_mismatch":  False,
-                    "pdb_id":       pdb_id,
+                    "name":             name,
+                    "residue":          res,
+                    "res_num":          res_num,
+                    "chain":            chain,
+                    "electrophile":     elec,
+                    "warhead":          wh,
+                    "matched_wh":       wh,
+                    "is_mismatch":      False,
+                    "pdb_id":           pdb_id,
+                    "label_wh_count":   label_wh_count,
                 })
 
     print(f"[INFO] Label entries total               : {len(label_entries):,}")
@@ -630,6 +775,16 @@ def run_analysis(
     n_matchable = len(label_entries) - n_mismatch
     print(f"[INFO] Warhead-matched (rankable)         : {n_matchable:,}")
     print(f"[INFO] Warhead mismatches                 : {n_mismatch:,}")
+    if warhead_comparison:
+        print("[INFO] Hit counting mode                : label × warhead pair")
+    elif perfect_match:
+        print("[INFO] Hit counting mode                : one hit max per label "
+              "(perfect-match: all training-matched warheads must hit when label "
+              "lists multiple Frankenstein warheads)")
+    else:
+        print("[INFO] Hit counting mode                : one hit max per label "
+              "(any matched warhead hit counts; use --warhead_comparison for "
+              "per-warhead breakdown)")
 
     # ── Pre-fetch PDB residue counts ──────────────────────────────────────
     # Do this upfront so downloads are batched before the main loop.
@@ -667,13 +822,14 @@ def run_analysis(
         pdb_id  = entry["pdb_id"]
 
         row = {
-            "Name":         name,
-            "Residue":      res,
-            "ResNum":       entry["res_num"],
-            "Chain":        entry["chain"],
-            "Electrophile": entry["electrophile"],
-            "Warhead":      entry["warhead"],
-            "Is_Mismatch":  is_mis,
+            "Name":                 name,
+            "Residue":              res,
+            "ResNum":               entry["res_num"],
+            "Chain":                entry["chain"],
+            "Electrophile":         entry["electrophile"],
+            "Warhead":              entry["warhead"],
+            "Is_Mismatch":          is_mis,
+            "Label_Warhead_Count":  entry.get("label_wh_count", 1),
         }
 
         if use_pdb_denom and pdb_id and pdb_id.upper() in pdb_residue_counts:
@@ -825,7 +981,18 @@ def run_analysis(
         detail_rows.append(row)
 
     # ── Summary statistics ────────────────────────────────────────────────
-    matchable_rows = [r for r in detail_rows if not r["Is_Mismatch"]]
+    warhead_matchable_rows = [r for r in detail_rows if not r["Is_Mismatch"]]
+
+    if warhead_comparison:
+        final_detail_rows = annotate_warhead_detail_rows(detail_rows)
+    else:
+        final_detail_rows = aggregate_label_detail_rows(
+            detail_rows,
+            perfect_match=perfect_match,
+        )
+
+    # Hit rate uses label- or warhead-level rows depending on mode.
+    matchable_rows = [r for r in final_detail_rows if not r["Is_Mismatch"]]
     hit_rows       = [r for r in matchable_rows if r["Hit"]]
 
     n_matchable_total = len(matchable_rows)
@@ -840,12 +1007,27 @@ def run_analysis(
         if r["Hit"]:
             res_hits[r["Residue"]] += 1
 
+    # Reduction summaries always use warhead-level evaluations (same in both modes).
+    filter_fail_counts = [0] * n_filters
+    for r in warhead_matchable_rows:
+        if r["Hit"]:
+            continue
+        failing_filter = r.get("Failing_Filter")
+        if failing_filter is not None and not pd.isna(failing_filter):
+            filter_fail_counts[int(failing_filter) - 1] += 1
+
     # ── Print summary ─────────────────────────────────────────────────────
     print("\n" + "=" * 70)
     print("  PREFILTER ANALYSIS SUMMARY")
     print("=" * 70)
 
-    print(f"\n  Overall hit rate (target survives all filters):")
+    if warhead_comparison:
+        hit_mode = "label × warhead pairs"
+    elif perfect_match:
+        hit_mode = "labels (perfect-match: all matched warheads must hit)"
+    else:
+        hit_mode = "labels (one hit max per label, any matched warhead)"
+    print(f"\n  Overall hit rate (target survives all filters) [{hit_mode}]:")
     print(f"    {n_hits} / {n_matchable_total}  =  {overall_hit_rate*100:.1f}%")
     print(f"    (excludes {n_mismatch} warhead-mismatched entries)")
 
@@ -884,7 +1066,7 @@ def run_analysis(
         avg_rel  = np.mean(rel_vals) if rel_vals else 0.0
         print(f"  {i+1:<4} {fl:<45} {avg_abs*100:>14.1f}%  {avg_rel*100:>14.1f}%")
 
-    total_abs_all = [r["Total_AbsReduction"] for r in matchable_rows
+    total_abs_all = [r["Total_AbsReduction"] for r in warhead_matchable_rows
                      if r["Total_AbsReduction"] is not None]
     avg_total_abs = np.mean(total_abs_all) if total_abs_all else 0.0
     print(f"\n  Average total search-space reduction (Filter 0 through final): "
@@ -892,7 +1074,7 @@ def run_analysis(
     print("=" * 70)
 
     # ── Export detail CSV ─────────────────────────────────────────────────
-    detail_df = pd.DataFrame(detail_rows)
+    detail_df = pd.DataFrame(final_detail_rows)
     if output_detail:
         detail_df.to_csv(output_detail, index=False)
         print(f"\n[INFO] Detail output written to: {output_detail}")
@@ -1008,8 +1190,30 @@ def main():
 
     parser.add_argument("--output-detail",  default=None, metavar="PATH")
     parser.add_argument("--output-summary", default=None, metavar="PATH")
+    parser.add_argument(
+        "--warhead-comparison", action="store_true",
+        help=(
+            "Count hits per label × warhead pair instead of one hit max per label. "
+            "Default mode deduplicates by electrophile target site (Name, Residue, "
+            "ResNum, Chain) and counts a hit if any matching warhead survives all filters."
+        ),
+    )
+    parser.add_argument(
+        "--perfect-match", action="store_true",
+        help=(
+            "For labels with multiple comma-separated Frankenstein warheads, require "
+            "every warhead present in both the label and training to keep the target "
+            "residue alive. Label warheads absent from training are not required. "
+            "Only applies in default label mode (not with --warhead-comparison)."
+        ),
+    )
 
     args = parser.parse_args()
+
+    if args.perfect_match and args.warhead_comparison:
+        sys.exit(
+            "[ERROR] --perfect-match cannot be used with --warhead-comparison."
+        )
 
     # ── Mutual exclusivity: reactivity vs lgbm ────────────────────────────
     if args.reactivity_features and args.lgbm_model:
@@ -1097,6 +1301,8 @@ def main():
         pdb_dir              = args.pdb_dir,
         output_detail        = args.output_detail,
         output_summary       = args.output_summary,
+        warhead_comparison   = args.warhead_comparison,
+        perfect_match        = args.perfect_match,
     )
 
 

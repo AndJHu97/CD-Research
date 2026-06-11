@@ -47,8 +47,8 @@ def remove_duplicate_folders(reference_folder, search_folder, dry_run=True):
 
 if __name__ == "__main__":
 
-    reference_folder = r"../incorrect_runs"  # Update this path to your reference folder
-    search_folder = r"../osc/"
+    reference_folder = r"run_incorrect"  # Update this path to your reference folder
+    search_folder = r"evaluation/"
 
     remove_duplicate_folders(
         reference_folder,

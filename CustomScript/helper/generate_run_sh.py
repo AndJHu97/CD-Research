@@ -26,19 +26,19 @@ which python
 which xtb
 conda info --envs
 
-python Frankenstein.py \\
-    --test bo-runs/bo_leftover_input_{i}.csv \\
+python Frankenstein.py \
+    --test batch_pdbs_deprot_{i}.csv \\
     --pdb-download-dir Existing_Structures \\
-    --out-dir bo-runs/run{run_index} \\
+    --out-dir evaluation/run{i} \\
     --pdb-dir Existing_Structures --reuse-existing
 """
 
 
 base = Path(__file__).parent
-for i in range(1, 6):
-    run_index = i + 30
-    script_path = base / f"run_covdb_{run_index}.sh"
+for i in range(1, 24):
+    run_index = i
+    script_path = base / f"run_{run_index}.sh"
     with script_path.open("w", encoding="utf-8", newline="\n") as handle:
         handle.write(template.format(i=i, run_index=run_index))
 
-print("Generated", ", ".join(f"run_covdb_{i}.sh" for i in range(1, 31)))
+print("Generated", ", ".join(f"run_{i}.sh" for i in range(1, 31)))

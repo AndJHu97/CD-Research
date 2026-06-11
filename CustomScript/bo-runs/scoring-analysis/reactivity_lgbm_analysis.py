@@ -58,6 +58,9 @@ Usage
         [--match-warheads] [--verbose] \\
         [--export-scores PATH] [--export-breakdown PATH] \\
         [--export-model PATH]
+
+
+        python reactivity_lgbm_analysis.py     --training  training.csv     --labels    batch_pdbs_bo_fixed.csv --features  Nucleophilicity_Index_Deprotonated HOMO_LUMO_Gap_Deprotonated Fukui_Deprotonated Nucleophilicity_Index_Deprotonated Partial_Charge_Deprotonated      --feature-direction higher lower higher higher higher  --top-k 3     --n-folds 5     --match-warheads   --prefilter Rel_Side_SASA gte 12 deprotonation_prob gte 0.14 --export-breakdown lgbm_reactivity_breakdown.csv --export-model lgbm_model.pkl
 """
 
 from __future__ import annotations

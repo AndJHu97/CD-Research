@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Create a two-panel figure from a baby_frank summary CSV.
+"""Create a two-panel figure from an eval_frank summary CSV.
 
 Panel A: Search-space reduction waterfall (absolute + relative per filter).
-Panel B: Per-residue hit-rate bar chart with aggregate statistics.
+Panel B: Success-rate bar chart vs literature covalent docking benchmarks (207 complexes).
 
 Usage:
-    python create_waterfall.py summary_baby_frank.csv [--output figure.png]
-    python create_waterfall.py summary_baby_frank.csv --skip-filter0
+    python create_eval_waterfall.py summary_eval_frank.csv [--output figure.png]
+    python create_eval_waterfall.py summary_eval_frank.csv --skip-filter0
 """
 
 from __future__ import annotations
@@ -20,12 +20,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+EVAL_DATASET_SIZE = 207
+
 # Canonical filter names → short display labels (order in CSV may vary).
 FILTER_SHORT_NAMES: dict[str, str] = {
     "Nucleophilic residue selection (Filter 0)": "Nucleophilic\nselection",
+    "Rel_Side_SASA gte 12.0": "Side-chain\nSASA",
     "Rel_Side_SASA gte 13.0": "Side-chain\nSASA",
     "deprotonation_prob gte 0.14": "Deprotonation\nprob.",
     "LGBM ranker top-1": "LGBM\ntop-1",
+    "LGBM ranker top-3": "LGBM\ntop-3",
 }
 
 FILTER0_PATTERN = re.compile(r"nucleophilic.*residue.*selection", re.I)
@@ -35,19 +39,24 @@ FILTER_NAME_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"rel_side_sasa", re.I), "Side-chain\nSASA"),
     (re.compile(r"deprotonation_prob", re.I), "Deprotonation\nprob."),
     (re.compile(r"lgbm.*reactivity ranker.*top-?1", re.I), "LGBM\ntop-1"),
+    (re.compile(r"lgbm.*reactivity ranker.*top-?3", re.I), "LGBM\ntop-3"),
+    (re.compile(r"lgbm.*ranker.*top-?1", re.I), "LGBM\ntop-1"),
+    (re.compile(r"lgbm.*ranker.*top-?3", re.I), "LGBM\ntop-3"),
 ]
 
-PANEL_B_RESIDUES = ("CYS", "LYS", "HIS", "TYR", "THR", "SER")
-RESIDUE_LABELS = {
-    "CYS": "Cys",
-    "LYS": "Lys",
-    "HIS": "His",
-    "TYR": "Tyr",
-    "THR": "Thr",
-    "SER": "Ser",
-}
+# Literature covalent docking benchmarks: (method label, % error, dataset size).
+DOCKING_BENCHMARKS: list[tuple[str, float, int]] = [
+    ("AutoDock4", 45.0, 207),
+    ("CovDock", 41.0, 207),
+    ("FITTED", 44.0, 175),
+    ("GOLD", 47.0, 207),
+    ("ICM-Pro", 38.0, 207),
+    ("MOE", 63.0, 207),
+]
 
-CYS_ONLY_BENCHMARK_PCT = 53.7
+METHOD_LABEL = "Frankenstein"
+FRANKENSTEIN_COLOR = "#55A868"
+BENCHMARK_COLORS = ["#4C72B0", "#DD8452", "#C44E52", "#8172B3", "#937860", "#64B5CD"]
 
 
 def short_filter_name(raw_name: str) -> str:
@@ -82,7 +91,7 @@ def prepare_waterfall_filters(
     """
     Optionally drop Filter 0 and rebase abs-reduction % onto Avg_N_After from Filter 0.
 
-    baby_frank reports Avg_Abs_Reduction_Pct against the full PDB denominator.
+    eval_frank reports Avg_Abs_Reduction_Pct against the full PDB denominator.
     With --skip-filter0, abs reduction uses the post-nucleophilic pool as 100%.
     Relative reduction per step is unchanged.
     """
@@ -133,43 +142,31 @@ def compute_overall_reduction(filters: pd.DataFrame) -> float:
     return float(filters["Avg_Abs_Reduction_Pct"].fillna(0).sum())
 
 
-def get_residue_rows(df: pd.DataFrame) -> pd.DataFrame:
-    residues = df[df["Group"] == "Residue_Type"].copy()
-    if residues.empty:
-        raise ValueError("No Residue_Type rows found in summary CSV.")
-    return residues
+def get_overall_hits(df: pd.DataFrame) -> int:
+    overall = df[df["Group"] == "Overall"]
+    if not overall.empty:
+        return int(overall.iloc[0]["N_Hits"])
+
+    cys = df[(df["Group"] == "Residue_Type") & (df["Category"] == "CYS")]
+    if not cys.empty:
+        return int(cys.iloc[0]["N_Hits"])
+
+    raise ValueError("No Overall or CYS Residue_Type row with N_Hits found in summary CSV.")
 
 
-def compute_panel_b_stats(residues: pd.DataFrame) -> dict[str, float | int]:
-    panel_res = residues[residues["Category"].isin(PANEL_B_RESIDUES)].copy()
+def compute_panel_b_stats(df: pd.DataFrame) -> dict[str, float | int]:
+    hits = get_overall_hits(df)
+    our_pct = hits / EVAL_DATASET_SIZE * 100.0
 
-    hits = int(panel_res["N_Hits"].sum())
-    matchable = int(panel_res["N_Matchable"].sum())
-    overall_six_pct = (hits / matchable * 100) if matchable else 0.0
-
-    all_hits = int(residues["N_Hits"].sum())
-    all_matchable = int(residues["N_Matchable"].sum())
-    cys_row = residues[residues["Category"] == "CYS"]
-    cys_hits = int(cys_row["N_Hits"].sum()) if not cys_row.empty else 0
-    cys_matchable = int(cys_row["N_Matchable"].sum()) if not cys_row.empty else 0
-
-    non_cys_hits = all_hits - cys_hits
-    non_cys_matchable = all_matchable - cys_matchable
-    non_cys_pct = (non_cys_hits / non_cys_matchable * 100) if non_cys_matchable else 0.0
-
-    per_residue_pct = {
-        row["Category"]: float(row["Hit_Rate_Pct"])
-        for _, row in panel_res.iterrows()
+    benchmark_pcts = {
+        label: 100.0 - error_pct
+        for label, error_pct, _ in DOCKING_BENCHMARKS
     }
 
     return {
-        "per_residue_pct": per_residue_pct,
-        "overall_six_hits": hits,
-        "overall_six_matchable": matchable,
-        "overall_six_pct": overall_six_pct,
-        "non_cys_hits": non_cys_hits,
-        "non_cys_matchable": non_cys_matchable,
-        "non_cys_pct": non_cys_pct,
+        "hits": hits,
+        "our_pct": our_pct,
+        "benchmark_pcts": benchmark_pcts,
     }
 
 
@@ -304,30 +301,22 @@ def plot_waterfall(
     ax.spines["right"].set_visible(False)
 
 
-def plot_accuracy_bars(
+def plot_benchmark_bars(
     ax: plt.Axes,
     stats: dict[str, float | int],
     overall_reduction: float,
 ) -> str:
-    per_res = stats["per_residue_pct"]
+    benchmark_pcts = stats["benchmark_pcts"]
 
-    categories: list[str] = [RESIDUE_LABELS[r] for r in PANEL_B_RESIDUES]
-    values: list[float] = [per_res.get(r, 0.0) for r in PANEL_B_RESIDUES]
-
-    categories.extend(["Overall\n(6 res.)", "Non-Cys\n(all res.)", "Cys-only\nscreeners*"])
-    values.extend([
-        float(stats["overall_six_pct"]),
-        float(stats["non_cys_pct"]),
-        CYS_ONLY_BENCHMARK_PCT,
-    ])
-
-    colors = ["#4C72B0"] * len(PANEL_B_RESIDUES)
-    colors.extend(["#55A868", "#C44E52", "#AAAAAA"])
+    benchmark_labels = [label for label, _, _ in DOCKING_BENCHMARKS]
+    categories = [METHOD_LABEL, *benchmark_labels]
+    values = [float(stats["our_pct"]), *(
+        float(benchmark_pcts[label]) for label in benchmark_labels
+    )]
+    colors = [FRANKENSTEIN_COLOR, *BENCHMARK_COLORS[: len(benchmark_labels)]]
 
     x = np.arange(len(categories))
     bars = ax.bar(x, values, color=colors, edgecolor="white", linewidth=0.8, width=0.72)
-
-    ax.axhline(CYS_ONLY_BENCHMARK_PCT, color="#888888", linewidth=1.0, linestyle="--", zorder=0)
 
     for bar, val in zip(bars, values):
         ax.text(
@@ -341,18 +330,23 @@ def plot_accuracy_bars(
         )
 
     ax.set_xticks(x)
-    ax.set_xticklabels(categories, fontsize=9)
-    ax.set_ylabel("Hit rate (%)")
+    ax.set_xticklabels(categories, fontsize=9, rotation=25, ha="right")
+    ax.set_ylabel("Success rate (%)")
     ax.set_ylim(0, max(values) + 9)
-    ax.set_title("B  Accuracy by residue", loc="left", fontweight="bold", fontsize=11)
+    ax.set_title(
+        "B  Success rate vs covalent docking benchmarks",
+        loc="left",
+        fontweight="bold",
+        fontsize=11,
+    )
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
     return (
         f"Overall reduction: {overall_reduction:.1f}%. "
-        f"*Literature benchmark for cysteine-only covalent screeners ({CYS_ONLY_BENCHMARK_PCT}%). "
-        f"Overall (6 res.): {stats['overall_six_hits']}/{stats['overall_six_matchable']} hits. "
-        f"Non-Cys: {stats['non_cys_hits']}/{stats['non_cys_matchable']} hits."
+        f"Docking bars: success = 100% − reported % error (≤2 Å RMSD, top-1 pose; "
+        f"most n={EVAL_DATASET_SIZE}, FITTED n=175). "
+        f"{METHOD_LABEL}: {stats['hits']}/{EVAL_DATASET_SIZE} complexes (residue recovery)."
     )
 
 
@@ -366,19 +360,22 @@ def create_figure(
     waterfall_filters, baseline_note = prepare_waterfall_filters(filters, skip_filter0)
     f0_to_last_reduction = compute_f0_to_last_reduction(filters)
     overall_reduction = compute_overall_reduction(filters)
-    residues = get_residue_rows(df)
-    stats = compute_panel_b_stats(residues)
+    stats = compute_panel_b_stats(df)
 
     fig, (ax_a, ax_b) = plt.subplots(
         2, 1, figsize=(10, 8.5), gridspec_kw={"height_ratios": [1.1, 1.0], "hspace": 0.28}
     )
 
     plot_waterfall(
-        ax_a, waterfall_filters, f0_to_last_reduction, overall_reduction, baseline_note=baseline_note
+        ax_a,
+        waterfall_filters,
+        f0_to_last_reduction,
+        overall_reduction,
+        baseline_note=baseline_note,
     )
-    footnote = plot_accuracy_bars(ax_b, stats, overall_reduction)
+    footnote = plot_benchmark_bars(ax_b, stats, overall_reduction)
     fig.text(0.5, 0.02, footnote, ha="center", va="bottom", fontsize=7, color="#555555")
-    fig.subplots_adjust(left=0.09, right=0.98, top=0.97, bottom=0.14)
+    fig.subplots_adjust(left=0.09, right=0.98, top=0.97, bottom=0.18)
 
     if output_path is None:
         output_path = csv_path.with_suffix(".png")
@@ -389,11 +386,16 @@ def create_figure(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Create waterfall + accuracy figure from a baby_frank summary CSV."
+        description="Create waterfall + benchmark figure from an eval_frank summary CSV."
     )
-    parser.add_argument("summary_csv", type=Path, help="Path to summary CSV (e.g. summary_baby_frank.csv).")
     parser.add_argument(
-        "--output", "-o", type=Path, default=None,
+        "summary_csv", type=Path, help="Path to summary CSV (e.g. summary_eval_frank.csv)."
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=Path,
+        default=None,
         help="Output image path (default: same name as CSV with .png extension).",
     )
     parser.add_argument(

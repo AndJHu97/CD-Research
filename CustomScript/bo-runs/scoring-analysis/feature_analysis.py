@@ -14,6 +14,9 @@ Usage:
                               # below = feature <= threshold is positive
     [--match-warheads]        # also require training Warhead to match label
                               # Frankenstein_Warhead (comma-separated OR logic)
+    [--export-sweep PATH]     # CSV of recall/threshold sweep (0.00–1.00, step 0.01)
+
+    python feature_analysis.py --training training_bo.csv --labels batch_pdbs_bo_fixed_with_name.csv --feature deprotonation_prob --threshold 0.14 --direction above --match-warheads --export-sweep sweep.csv
 
 Training CSV expected headers:
     Residue, Chain, ResNum, Warhead, pKa, Abs_Side_SASA, Rel_Side_SASA,
@@ -25,6 +28,7 @@ Labels CSV expected headers:
 """
 
 import argparse
+import math
 import sys
 import pandas as pd
 
@@ -57,7 +61,59 @@ def parse_frankenstein_warheads(raw: str) -> set[str]:
     """Split a comma-separated Frankenstein_Warhead string into a normalised set."""
     return {w.strip().lower() for w in str(raw).split(",") if w.strip()}
 
-def threshold_sweep(df, feature, labeled_col, direction):
+def _metrics_at_threshold(df, feature, labeled_col, direction, thr):
+    if direction == "above":
+        pred = df[feature] >= thr
+    else:
+        pred = df[feature] <= thr
+
+    TP = int(((df[labeled_col]) & pred).sum())
+    FN = int(((df[labeled_col]) & ~pred).sum())
+    FP = int(((~df[labeled_col]) & pred).sum())
+    TN = int(((~df[labeled_col]) & ~pred).sum())
+
+    recall = TP / (TP + FN) if (TP + FN) else 0.0
+    spec = TN / (TN + FP) if (TN + FP) else 0.0
+    precision = TP / (TP + FP) if (TP + FP) else 0.0
+    selected_frac = float(pred.mean())
+
+    return {
+        "threshold": thr,
+        "recall": recall,
+        "specificity": spec,
+        "precision": precision,
+        "selected_fraction": selected_frac,
+        "TP": TP,
+        "FP": FP,
+        "FN": FN,
+        "TN": TN,
+    }
+
+
+def _threshold_for_recall_target(labeled_vals, target_recall: float, direction: str) -> float:
+    """Smallest threshold change that achieves recall >= target_recall on labeled sites."""
+    vals = sorted(labeled_vals)
+    n = len(vals)
+    if n == 0:
+        return float("nan")
+
+    if target_recall <= 0:
+        if direction == "above":
+            return vals[-1] + 1e-9
+        return vals[0] - 1e-9
+
+    if target_recall >= 1:
+        if direction == "above":
+            return vals[0]
+        return vals[-1]
+
+    k = math.ceil(target_recall * n)
+    if direction == "above":
+        return vals[n - k]
+    return vals[k - 1]
+
+
+def threshold_sweep(df, feature, labeled_col, direction, export_sweep_fn: str | None = None):
 
     print("\n[THRESHOLD SWEEP]")
     print(
@@ -72,26 +128,38 @@ def threshold_sweep(df, feature, labeled_col, direction):
     for q in quantiles:
 
         thr = df[feature].quantile(q)
-
-        if direction == "above":
-            pred = df[feature] >= thr
-        else:
-            pred = df[feature] <= thr
-
-        TP = ((df[labeled_col]) & pred).sum()
-        FN = ((df[labeled_col]) & ~pred).sum()
-        FP = ((~df[labeled_col]) & pred).sum()
-        TN = ((~df[labeled_col]) & ~pred).sum()
-
-        recall = TP/(TP+FN) if TP+FN else 0
-        spec   = TN/(TN+FP) if TN+FP else 0
+        m = _metrics_at_threshold(df, feature, labeled_col, direction, thr)
 
         print(
-            f"{thr:8.4f} "
-            f"{recall:8.3f} "
-            f"{spec:8.3f} "
-            f"{pred.mean()*100:9.1f}%"
+            f"{m['threshold']:8.4f} "
+            f"{m['recall']:8.3f} "
+            f"{m['specificity']:8.3f} "
+            f"{m['selected_fraction']*100:9.1f}%"
         )
+
+    if export_sweep_fn is not None:
+        labeled_vals = df.loc[df[labeled_col], feature].tolist()
+        rows = []
+        for i in range(101):
+            target_recall = i / 100.0
+            thr = _threshold_for_recall_target(labeled_vals, target_recall, direction)
+            m = _metrics_at_threshold(df, feature, labeled_col, direction, thr)
+            rows.append({
+                "recall_target": target_recall,
+                "threshold": m["threshold"],
+                "recall": m["recall"],
+                "specificity": m["specificity"],
+                "precision": m["precision"],
+                "selected_fraction": m["selected_fraction"],
+                "TP": m["TP"],
+                "FP": m["FP"],
+                "FN": m["FN"],
+                "TN": m["TN"],
+            })
+
+        sweep_df = pd.DataFrame(rows)
+        sweep_df.to_csv(export_sweep_fn, index=False)
+        print(f"\n[INFO] Recall/threshold sweep (0.00–1.00, step 0.01) exported to: {export_sweep_fn}")
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +175,7 @@ def run(
     direction: str,          # "above" or "below"
     verbose: bool,
     export_fn: str | None = None,
+    export_sweep_fn: str | None = None,
     match_warheads: bool = False,
 ) -> None:
 
@@ -230,6 +299,7 @@ def run(
         feature=feature,
         labeled_col="_labeled",
         direction=direction,
+        export_sweep_fn=export_sweep_fn,
     )
 
     # ---- determine threshold --------------------------------------------
@@ -343,6 +413,9 @@ def main():
                         help="Print FP/FN residue details.")
     parser.add_argument("--export-fn", default=None, metavar="PATH",
                         help="Export false negative rows to this CSV path.")
+    parser.add_argument("--export-sweep", default=None, metavar="PATH",
+                        help="Export recall/threshold sweep (recall 0.00–1.00, step 0.01) "
+                             "to this CSV path for plotting.")
     parser.add_argument("--match-warheads", action="store_true",
                         help="Require training 'Warhead' column to match at least one entry "
                              "in the label 'Frankenstein_Warhead' column (comma-separated OR). "
@@ -358,6 +431,7 @@ def main():
         direction=args.direction,
         verbose=args.verbose,
         export_fn=args.export_fn,
+        export_sweep_fn=args.export_sweep,
         match_warheads=args.match_warheads,
     )
 

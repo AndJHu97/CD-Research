@@ -170,9 +170,9 @@ ELECTROPHILE_WARHEADS = [
     ("Fluoromethyl ketone", "C(=O)CF", 1, "soft"),                # carbonyl carbon
 
     # Epoxides and aziridines
-    ("Epoxide", "[CX4;R3]1[OX2;R3][CX4;R3]1", 0, "hard"),  # one of the ring carbons (usually less hindered)
-    ("Alpha-beta epoxyketone (epoxide)", "[CX3](=O)[CX4;R3]1[OX2;R3][CX4;R3]1", 2, "borderline"),  # index 2 = first epoxide carbon
-    ("Alpha-beta epoxyketone (carbonyl)", "[CX3](=O)[CX4;R3]1[OX2;R3][CX4;R3]1", 0, "hard"),       # index 0 = carbonyl carbon
+    ("Epoxide", "[CX4;r3]1[OX2;r3][CX4;r3]1", 0, "hard"),
+    ("Alpha-beta epoxyketone (epoxide)", "[CX3](=O)[CX4;r3]1[OX2;r3][CX4;r3]1", 2, "borderline"),
+    ("Alpha-beta epoxyketone (carbonyl)", "[CX3](=O)[CX4;r3]1[OX2;r3][CX4;r3]1", 0, "hard"),
     ("Aziridine", "C1NC1", 0, "hard"),   # carbon in the three-membered ring
 
     # Nitriles

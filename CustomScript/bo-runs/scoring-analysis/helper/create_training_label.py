@@ -13,14 +13,20 @@ Outputs:
         etc.
 
     training CSV
-        Concatenates every
+        Concatenates per-warhead
+        deprotonated_ranked_targets_<warhead>_deprot_predictions.csv files
+        found under run*/<name>_output/ folders (falling back to the combined
         deprotonated_ranked_covalent_targets_all_warheads_deprot_predictions.csv
-        found under run*/<name>_output/ folders and inserts Name as the first
-        column using the folder name without the _output suffix.
+        when no per-warhead files exist). Warhead labels are taken from the
+        prediction filename. Inserts Name as the first column using the folder
+        name without the _output suffix.
 
     training_missing_warheads.csv
         Contains one Name column listing folders that do not contain a usable
         deprotonated prediction CSV.
+
+    Evaluative:
+    python helper/create_training_label.py ../../batch_pdbs_deprot.csv evaluation/
 """
 
 from __future__ import annotations
@@ -34,21 +40,23 @@ from collections import defaultdict
 
 
 PREDICTION_FILENAME = "deprotonated_ranked_covalent_targets_all_warheads_deprot_predictions.csv"
+PER_WARHEAD_PREDICTION_GLOB = "deprotonated_ranked_targets_*_deprot_predictions.csv"
 
 _FRANKENSTEIN_TO_RAW: Dict[str, List[str]] = {
  
     # --- Michael acceptors ---
     "Alpha-beta unsaturated carbonyl (Michael acceptor)": [
-        "Michael Acceptor", "Vinyl Nitroalkane", "Enamine",
+        "Michael Acceptor", "Michael acceptor",  # both casings
+        "Vinyl Nitroalkane", "Enamine",
     ],
     "Acrylamide warhead": [
-        "Michael Acceptor",
+        "Michael Acceptor", "Michael acceptor",
     ],
     "Propiolamide warhead": [
-        "Alkyne", "Alkynyl", "Michael Acceptor",
+        "Alkyne", "Alkynyl", "Michael Acceptor", "Michael acceptor",
     ],
     "Ketoamide (Michael acceptor)": [
-        "Ketoamide", "Michael Acceptor",
+        "Ketoamide", "Michael Acceptor", "Michael acceptor",
     ],
  
     # --- Vinyl sulfones ---
@@ -67,13 +75,13 @@ _FRANKENSTEIN_TO_RAW: Dict[str, List[str]] = {
         "Aldehyde", "Aldehydic carbonyl",
     ],
     "Ketone (reactive)": [
-        "Carbonyl", "alpha-acyloxymethyl_Ketone",
+        "Carbonyl", "alpha-acyloxymethyl_Ketone", "Ketone",
     ],
     "Activated ketone": [
-        "Carbonyl", "alpha-acyloxymethyl_Ketone",
+        "Carbonyl", "alpha-acyloxymethyl_Ketone", "Ketone",
     ],
     "Fluoromethyl ketone": [
-        "Carbonyl",
+        "Carbonyl", "Ketone",
     ],
  
     # --- Esters / acyl transfer ---
@@ -98,22 +106,28 @@ _FRANKENSTEIN_TO_RAW: Dict[str, List[str]] = {
  
     # --- Alkyl / aryl halides ---
     "Alkyl halide (good LG)": [
-        "Halohydrocarbon", "Alkyne",          # propargyl halides
+        "Halohydrocarbon", "Alkyne",
+        "Nucleophilic substitution warhead",  # halide-based SN2
     ],
     "Alkyl chloride": [
         "Halohydrocarbon",
+        "Nucleophilic substitution warhead",
     ],
     "Alkyl halide (Cl,Br,I)": [
         "Halohydrocarbon",
+        "Nucleophilic substitution warhead",
     ],
     "Nitro-activated aryl halide (SNAr)": [
         "Aryl Halide", "Vinyl Halide",
+        "Nucleophilic substitution warhead",
     ],
     "Heteroaryl halide (SNAr)": [
         "Aryl Halide", "Vinyl Halide",
+        "Nucleophilic substitution warhead",
     ],
     "Haloacetamidine": [
         "Halohydrocarbon(C=N)", "Amidine",
+        "Nucleophilic substitution warhead",
     ],
  
     # --- Epoxides ---
@@ -140,7 +154,7 @@ _FRANKENSTEIN_TO_RAW: Dict[str, List[str]] = {
         "Nitrile",
     ],
     "Cyanamide": [
-        "Nitrile",                            # cyanamide is N-CN, a specific nitrile subtype
+        "Nitrile",
     ],
  
     # --- Aminium / amines ---
@@ -156,7 +170,7 @@ _FRANKENSTEIN_TO_RAW: Dict[str, List[str]] = {
         "Sulfonyl Fluorine", "Sulfonyl Halide", "Alpha-Cyclosulfate",
     ],
     "Sulfonyl chloride": [
-        "Sulfonyl Chloride", "Sulfonyl chloride",   # both casings present in CSV
+        "Sulfonyl Chloride", "Sulfonyl chloride",
         "Sulfonyl Halide",
     ],
     "Sulfonamide (activated)": [
@@ -189,7 +203,7 @@ _FRANKENSTEIN_TO_RAW: Dict[str, List[str]] = {
  
     # --- Isocyanate / isothiocyanate / carbodiimide ---
     "Isocyanate": [
-        "Carbodiimide",                       # N=C=N is structurally related
+        "Carbodiimide",
     ],
     "Isothiocyanate": [
         "Isothiocyanate",
@@ -235,25 +249,45 @@ _CSV_TO_FRANKENSTEIN: Dict[str, List[str]] = defaultdict(list)
 for frank_name, csv_labels in _FRANKENSTEIN_TO_RAW.items():
     for label in csv_labels:
         _CSV_TO_FRANKENSTEIN[_norm(label)].append(frank_name)
- 
+
 _UNCLASSIFIED = "Unclassified"
+
+
+def _warhead_safe_name(name: str) -> str:
+    return name.replace(" ", "_").replace("(", "").replace(")", "")
+
+
+_SAFE_TO_FRANKENSTEIN: Dict[str, str] = {
+    _warhead_safe_name(frank_name): frank_name for frank_name in _FRANKENSTEIN_TO_RAW
+}
  
  
 def _to_frankenstein(raw_warhead: Optional[str]) -> str:
     """
-    Given a raw CSV warhead label, return the matching Frankenstein
-    ELECTROPHILE_WARHEADS name(s) as a comma-separated string,
-    or 'Unclassified' if no match exists.
+    Given a raw CSV warhead label (or comma-separated raw labels), return the
+    matching Frankenstein ELECTROPHILE_WARHEADS name(s) as a comma-separated
+    string, or 'Unclassified' if no match exists.
     """
     if not raw_warhead:
         return _UNCLASSIFIED
-    matches = _CSV_TO_FRANKENSTEIN.get(_norm(raw_warhead))
-    if not matches:
+
+    raw_parts = [part.strip() for part in str(raw_warhead).split(",") if part.strip()]
+    if not raw_parts:
         return _UNCLASSIFIED
-    # Deduplicate while preserving order
-    seen = set()
-    deduped = [m for m in matches if not (m in seen or seen.add(m))]
-    return ", ".join(deduped)
+
+    # Deduplicate Frankenstein names while preserving order across all raw parts.
+    seen: set[str] = set()
+    deduped: List[str] = []
+    for part in raw_parts:
+        matches = _CSV_TO_FRANKENSTEIN.get(_norm(part))
+        if not matches:
+            continue
+        for frank_name in matches:
+            if frank_name not in seen:
+                seen.add(frank_name)
+                deduped.append(frank_name)
+
+    return ", ".join(deduped) if deduped else _UNCLASSIFIED
 
 
 def _normalize_text(value: object) -> str:
@@ -275,17 +309,39 @@ def _find_column(fieldnames: Sequence[str], candidates: Iterable[str]) -> str | 
 	return None
 
 
-def _folder_has_data_file(folder: Path) -> bool:
-	prediction_path = folder / PREDICTION_FILENAME
-	if not prediction_path.is_file():
-		return False
+def _warhead_from_prediction_filename(path: Path) -> str:
+	stem = path.stem
+	prefix = "deprotonated_ranked_targets_"
+	suffix = "_deprot_predictions"
+	if not stem.startswith(prefix) or not stem.endswith(suffix):
+		return ""
+	safe_name = stem[len(prefix): -len(suffix)]
+	return _SAFE_TO_FRANKENSTEIN.get(safe_name, safe_name.replace("_", " "))
 
-	with prediction_path.open("r", newline="", encoding="utf-8-sig") as handle:
+
+def _discover_prediction_files(folder: Path) -> List[Path]:
+	per_warhead = sorted(folder.glob(PER_WARHEAD_PREDICTION_GLOB))
+	if per_warhead:
+		return per_warhead
+
+	combined = folder / PREDICTION_FILENAME
+	if combined.is_file():
+		return [combined]
+
+	return []
+
+
+def _csv_has_data_rows(path: Path) -> bool:
+	with path.open("r", newline="", encoding="utf-8-sig") as handle:
 		reader = csv.DictReader(handle)
 		for _ in reader:
 			return True
 
 	return False
+
+
+def _folder_has_data_file(folder: Path) -> bool:
+	return any(_csv_has_data_rows(path) for path in _discover_prediction_files(folder))
 
 
 def _discover_output_folders(runs_root: Path) -> List[Path]:
@@ -337,6 +393,8 @@ def _assign_label_names(
     New column added to every output row:
         Frankenstein_Warhead : str
             Comma-separated Frankenstein warhead name(s), or 'Unclassified'.
+            The Warhead column may contain one raw label or several comma-separated
+            raw labels; each is mapped and results are merged without duplicates.
     """
     groups: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     last_index: Dict[str, int] = {}
@@ -425,25 +483,39 @@ def process_training_rows(runs_root: Path, output_path: Path, missing_output_pat
 
 	for folder in output_folders:
 		folder_name = folder.name[:-7]
-		prediction_path = folder / PREDICTION_FILENAME
-		if not _folder_has_data_file(folder):
+		prediction_files = _discover_prediction_files(folder)
+		if not prediction_files:
 			missing_names.append({"Name": folder_name})
 			continue
 
-		with prediction_path.open("r", newline="", encoding="utf-8-sig") as handle:
-			reader = csv.DictReader(handle)
-			if not reader.fieldnames:
-				missing_names.append({"Name": folder_name})
+		folder_had_rows = False
+		for prediction_path in prediction_files:
+			if not _csv_has_data_rows(prediction_path):
 				continue
 
-			for field in reader.fieldnames:
-				if field not in fieldnames and _normalize_text(field) != "name":
-					fieldnames.append(field)
+			warhead_from_filename = _warhead_from_prediction_filename(prediction_path)
 
-			for row in reader:
-				row_copy = dict(row)
-				row_copy["Name"] = folder_name
-				training_rows.append(row_copy)
+			with prediction_path.open("r", newline="", encoding="utf-8-sig") as handle:
+				reader = csv.DictReader(handle)
+				if not reader.fieldnames:
+					continue
+
+				warhead_col = _find_column(reader.fieldnames, ["warhead", "Warhead"])
+
+				for field in reader.fieldnames:
+					if field not in fieldnames and _normalize_text(field) != "name":
+						fieldnames.append(field)
+
+				for row in reader:
+					row_copy = dict(row)
+					row_copy["Name"] = folder_name
+					if warhead_from_filename and warhead_col:
+						row_copy[warhead_col] = warhead_from_filename
+					training_rows.append(row_copy)
+					folder_had_rows = True
+
+		if not folder_had_rows:
+			missing_names.append({"Name": folder_name})
 
 	if not training_rows:
 		output_fieldnames = ["Name"]
