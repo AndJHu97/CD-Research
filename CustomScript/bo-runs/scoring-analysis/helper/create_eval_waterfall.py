@@ -1,24 +1,39 @@
 #!/usr/bin/env python3
-"""Create a two-panel figure from an eval_frank summary CSV.
+"""Create a four-panel 2×2 figure from an eval_frank summary CSV.
 
-Panel A: Search-space reduction waterfall (absolute + relative per filter).
-Panel B: Success-rate bar chart vs literature covalent docking benchmarks (207 complexes).
+Panel A: Search-space reduction Sankey (post-nucleophilic pool through filters).
+Panel B: Per-filter target retention vs random baseline (If_Match totals; Filter_Residue_Type when present).
+Panel C: Failure attribution bar chart (% of N_Failures per filter).
+Panel D: Success-rate bar chart vs literature covalent docking benchmarks (207 complexes).
 
 Usage:
     python create_eval_waterfall.py summary_eval_frank.csv [--output figure.png]
-    python create_eval_waterfall.py summary_eval_frank.csv --skip-filter0
 """
 
 from __future__ import annotations
 
 import argparse
 import re
+import sys
 from pathlib import Path
 
-import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+_HELPER_DIR = Path(__file__).resolve().parent
+if str(_HELPER_DIR) not in sys.path:
+    sys.path.insert(0, str(_HELPER_DIR))
+
+from create_waterfall import (  # noqa: E402
+    FIG_HEIGHT,
+    FIG_WIDTH,
+    compute_failure_attribution,
+    compute_filter_accuracy_stats,
+    plot_failure_attribution_bars,
+    plot_filter_accuracy_lines,
+    plot_search_space_sankey,
+)
 
 EVAL_DATASET_SIZE = 207
 
@@ -56,6 +71,8 @@ DOCKING_BENCHMARKS: list[tuple[str, float, int]] = [
 
 METHOD_LABEL = "Frankenstein"
 FRANKENSTEIN_COLOR = "#55A868"
+FILTER_HIT_COLOR = "#4C72B0"
+RANDOM_BASELINE_COLOR = "#C0C0C0"
 BENCHMARK_COLORS = ["#4C72B0", "#DD8452", "#C44E52", "#8172B3", "#937860", "#64B5CD"]
 
 
@@ -84,41 +101,66 @@ def get_filter_rows(df: pd.DataFrame) -> pd.DataFrame:
     return filters
 
 
-def prepare_waterfall_filters(
-    filters: pd.DataFrame,
-    skip_filter0: bool,
-) -> tuple[pd.DataFrame, str | None]:
-    """
-    Optionally drop Filter 0 and rebase abs-reduction % onto Avg_N_After from Filter 0.
+def prepare_filters_for_accuracy(df: pd.DataFrame) -> pd.DataFrame:
+    """Filter rows for Panel B: prefer Filter_Residue_Type (eval is per-residue)."""
+    residue_filters = df[df["Group"] == "Filter_Residue_Type"].copy()
+    if not residue_filters.empty:
+        cys = residue_filters[residue_filters["Category"] == "CYS"]
+        filters = cys.copy() if not cys.empty else residue_filters.copy()
+    else:
+        filters = df[df["Group"] == "Filter"].copy()
 
-    eval_frank reports Avg_Abs_Reduction_Pct against the full PDB denominator.
-    With --skip-filter0, abs reduction uses the post-nucleophilic pool as 100%.
-    Relative reduction per step is unchanged.
-    """
-    if not skip_filter0:
-        return filters.copy(), None
+    if filters.empty:
+        raise ValueError("No Filter or Filter_Residue_Type rows found for Panel B.")
 
-    f0_mask = filters["Category"].map(is_filter0)
-    if not f0_mask.any():
-        raise ValueError(
-            "--skip-filter0 requires a nucleophilic residue selection (Filter 0) row."
-        )
+    if "Filter" in filters.columns and filters["Filter"].notna().any():
+        filters["_Filter_Name"] = filters["Filter"]
+    else:
+        filters["_Filter_Name"] = filters["Category"]
+    filters["Short_Name"] = filters["_Filter_Name"].map(short_filter_name)
+    return _ensure_if_match_totals(filters)
 
-    f0_row = filters[f0_mask].iloc[0]
-    baseline_n = float(f0_row["Avg_N_After"])
-    if baseline_n <= 0:
-        raise ValueError("--skip-filter0: Filter 0 Avg_N_After is missing or zero.")
 
-    remaining = filters[~f0_mask].copy()
-    remaining["Avg_Abs_Reduction_Pct"] = (
-        (remaining["Avg_N_Before"] - remaining["Avg_N_After"]) / baseline_n * 100.0
+def _ensure_if_match_totals(filters: pd.DataFrame) -> pd.DataFrame:
+    """Ensure Total_N_*_If_Match exist (from CSV, Avg×N_Count, or Avg fallback)."""
+    out = filters.copy()
+
+    def _fill_total(total_col: str, avg_col: str, count_col: str) -> None:
+        if total_col in out.columns and out[total_col].notna().any():
+            return
+        if avg_col in out.columns and out[avg_col].notna().any():
+            if count_col in out.columns and out[count_col].notna().any():
+                out[total_col] = out[avg_col] * out[count_col]
+            else:
+                out[total_col] = pd.to_numeric(out[avg_col], errors="coerce")
+            return
+        base_total = total_col.replace("_If_Match", "")
+        base_avg = avg_col.replace("_If_Match", "")
+        if base_total in out.columns and out[base_total].notna().any():
+            out[total_col] = out[base_total]
+        elif base_avg in out.columns:
+            out[total_col] = pd.to_numeric(out[base_avg], errors="coerce")
+
+    _fill_total(
+        "Total_N_Before_If_Match", "Avg_N_Before_If_Match", "N_Count_If_Match"
     )
-
-    baseline_note = (
-        f"abs. reduction rebased to post-nucleophilic pool "
-        f"(avg N={baseline_n:.1f})"
+    _fill_total(
+        "Total_N_After_If_Match", "Avg_N_After_If_Match", "N_Count_If_Match"
     )
-    return remaining, baseline_note
+    return out
+
+
+def prepare_filters_for_sankey(filters: pd.DataFrame) -> pd.DataFrame:
+    """Normalize eval filter rows for create_waterfall Sankey (Total_N from Avg_N if needed)."""
+    out = filters.copy()
+    out["_Filter_Name"] = out["Category"]
+    if "Total_N_Before" not in out.columns or out["Total_N_Before"].isna().all():
+        out["Total_N_Before"] = pd.to_numeric(out["Avg_N_Before"], errors="coerce")
+        out["Total_N_After"] = pd.to_numeric(out["Avg_N_After"], errors="coerce")
+    else:
+        out["Total_N_Before"] = out["Total_N_Before"].fillna(out["Avg_N_Before"])
+        out["Total_N_After"] = out["Total_N_After"].fillna(out["Avg_N_After"])
+    return out
 
 
 def compute_f0_to_last_reduction(filters: pd.DataFrame) -> float:
@@ -142,6 +184,20 @@ def compute_overall_reduction(filters: pd.DataFrame) -> float:
     return float(filters["Avg_Abs_Reduction_Pct"].fillna(0).sum())
 
 
+def get_overall_matchable(df: pd.DataFrame) -> int:
+    overall = df[df["Group"] == "Overall"]
+    if not overall.empty:
+        return int(overall.iloc[0]["N_Matchable"])
+
+    cys = df[(df["Group"] == "Residue_Type") & (df["Category"] == "CYS")]
+    if not cys.empty:
+        return int(cys.iloc[0]["N_Matchable"])
+
+    raise ValueError(
+        "No Overall or CYS Residue_Type row with N_Matchable found in summary CSV."
+    )
+
+
 def get_overall_hits(df: pd.DataFrame) -> int:
     overall = df[df["Group"] == "Overall"]
     if not overall.empty:
@@ -154,9 +210,21 @@ def get_overall_hits(df: pd.DataFrame) -> int:
     raise ValueError("No Overall or CYS Residue_Type row with N_Hits found in summary CSV.")
 
 
-def compute_panel_b_stats(df: pd.DataFrame) -> dict[str, float | int]:
+def compute_cumulative_random_baseline(accuracy: pd.DataFrame) -> float:
+    """Product of per-filter random retention rates (post Filter 0), as %."""
+    cumulative = 1.0
+    for pct in accuracy["Random_Hit_Rate_Pct"]:
+        cumulative *= float(pct) / 100.0
+    return cumulative * 100.0
+
+
+def compute_panel_d_stats(
+    df: pd.DataFrame,
+    accuracy: pd.DataFrame,
+) -> dict[str, float | int]:
     hits = get_overall_hits(df)
     our_pct = hits / EVAL_DATASET_SIZE * 100.0
+    cumulative_random_pct = compute_cumulative_random_baseline(accuracy)
 
     benchmark_pcts = {
         label: 100.0 - error_pct
@@ -166,139 +234,9 @@ def compute_panel_b_stats(df: pd.DataFrame) -> dict[str, float | int]:
     return {
         "hits": hits,
         "our_pct": our_pct,
+        "cumulative_random_pct": cumulative_random_pct,
         "benchmark_pcts": benchmark_pcts,
     }
-
-
-def plot_waterfall(
-    ax: plt.Axes,
-    filters: pd.DataFrame,
-    f0_to_last_reduction: float,
-    overall_reduction: float,
-    baseline_note: str | None = None,
-) -> None:
-    """Upward waterfall of cumulative search-space eliminated per filter."""
-    names = filters["Short_Name"].tolist()
-    abs_pct = filters["Avg_Abs_Reduction_Pct"].fillna(0).to_numpy(dtype=float)
-    rel_pct = filters["Avg_Rel_Reduction_Pct"].fillna(0).to_numpy(dtype=float)
-
-    n = len(names)
-    x = np.arange(n)
-    width = 0.55
-
-    cumulative = 0.0
-    abs_bottoms: list[float] = []
-    abs_heights: list[float] = []
-    for drop in abs_pct:
-        abs_bottoms.append(cumulative)
-        abs_heights.append(drop)
-        cumulative += drop
-
-    ax.bar(
-        x,
-        abs_heights,
-        width,
-        bottom=abs_bottoms,
-        color="#4C72B0",
-        edgecolor="white",
-        linewidth=0.8,
-        label="Abs. reduction",
-        zorder=3,
-    )
-
-    for i in range(n - 1):
-        step_top = abs_bottoms[i] + abs_heights[i]
-        ax.plot(
-            [x[i] + width / 2, x[i + 1] - width / 2],
-            [step_top, step_top],
-            color="#4C72B0",
-            linewidth=1.0,
-            linestyle="--",
-            alpha=0.6,
-            zorder=2,
-        )
-
-    total_reduction = cumulative
-    ax.axhline(total_reduction, color="#888888", linewidth=0.8, linestyle=":", zorder=1)
-    total_label = (
-        f"Total\n{f0_to_last_reduction:.1f}%\n"
-        f"(Overall reduction: {overall_reduction:.1f}%)"
-    )
-    label_x = x[-1] + width / 2 + 0.05
-    ax.text(
-        label_x,
-        total_reduction - 1.0,
-        total_label,
-        ha="left",
-        va="bottom",
-        fontsize=7.5,
-        color="#555555",
-    )
-
-    for i, (a_drop, r_drop) in enumerate(zip(abs_pct, rel_pct)):
-        bar_bottom = abs_bottoms[i]
-        bar_height = abs_heights[i]
-        if bar_height >= 4.0:
-            ax.text(
-                x[i],
-                bar_bottom + bar_height / 2,
-                f"+{a_drop:.1f}%",
-                ha="center",
-                va="center",
-                fontsize=8,
-                color="white",
-                fontweight="bold",
-            )
-        else:
-            ax.text(
-                x[i],
-                bar_bottom + bar_height + 1.0,
-                f"+{a_drop:.1f}%",
-                ha="center",
-                va="bottom",
-                fontsize=7.5,
-                color="#2F4A72",
-                fontweight="bold",
-            )
-        step_top = bar_bottom + bar_height
-        ax.text(
-            x[i],
-            step_top + 1.5,
-            f"rel {r_drop:.1f}%",
-            ha="center",
-            va="bottom",
-            fontsize=7.5,
-            color="#DD8452",
-            fontweight="bold",
-        )
-
-    ax.legend(
-        handles=[
-            mpatches.Patch(color="#4C72B0", label="Abs. reduction"),
-            mpatches.Patch(color="#DD8452", label="Rel. reduction (per step)"),
-        ],
-        loc="upper left",
-        fontsize=8,
-        framealpha=0.9,
-    )
-
-    ax.set_xlim(-0.55, label_x + 0.85)
-    ax.set_xticks(x)
-    ax.set_xticklabels(names, fontsize=9)
-    if baseline_note:
-        ax.set_ylabel("Cumulative reduction (% of post-nucleophilic pool)")
-        ax.set_title(
-            "A  Search-space reduction (post-nucleophilic selection)",
-            loc="left",
-            fontweight="bold",
-            fontsize=11,
-        )
-    else:
-        ax.set_ylabel("Cumulative search-space reduction (%)")
-        ax.set_title("A  Search-space reduction", loc="left", fontweight="bold", fontsize=11)
-    ax.set_ylim(0, total_reduction + 7)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
 
 
 def plot_benchmark_bars(
@@ -309,11 +247,18 @@ def plot_benchmark_bars(
     benchmark_pcts = stats["benchmark_pcts"]
 
     benchmark_labels = [label for label, _, _ in DOCKING_BENCHMARKS]
-    categories = [METHOD_LABEL, *benchmark_labels]
-    values = [float(stats["our_pct"]), *(
-        float(benchmark_pcts[label]) for label in benchmark_labels
-    )]
-    colors = [FRANKENSTEIN_COLOR, *BENCHMARK_COLORS[: len(benchmark_labels)]]
+    random_label = "Random baseline"
+    categories = [METHOD_LABEL, random_label, *benchmark_labels]
+    values = [
+        float(stats["our_pct"]),
+        float(stats["cumulative_random_pct"]),
+        *(float(benchmark_pcts[label]) for label in benchmark_labels),
+    ]
+    colors = [
+        FRANKENSTEIN_COLOR,
+        RANDOM_BASELINE_COLOR,
+        *BENCHMARK_COLORS[: len(benchmark_labels)],
+    ]
 
     x = np.arange(len(categories))
     bars = ax.bar(x, values, color=colors, edgecolor="white", linewidth=0.8, width=0.72)
@@ -334,7 +279,7 @@ def plot_benchmark_bars(
     ax.set_ylabel("Success rate (%)")
     ax.set_ylim(0, max(values) + 9)
     ax.set_title(
-        "B  Success rate vs covalent docking benchmarks",
+        "D  Success rate vs covalent screening benchmarks",
         loc="left",
         fontweight="bold",
         fontsize=11,
@@ -344,6 +289,9 @@ def plot_benchmark_bars(
 
     return (
         f"Overall reduction: {overall_reduction:.1f}%. "
+        f"Random baseline: product of per-filter random retention "
+        f"(1 − avg N after / avg N before) across post-nucleophilic filters "
+        f"({stats['cumulative_random_pct']:.1f}%). "
         f"Docking bars: success = 100% − reported % error (≤2 Å RMSD, top-1 pose; "
         f"most n={EVAL_DATASET_SIZE}, FITTED n=175). "
         f"{METHOD_LABEL}: {stats['hits']}/{EVAL_DATASET_SIZE} complexes (residue recovery)."
@@ -355,27 +303,43 @@ def create_figure(
     output_path: Path | None = None,
     skip_filter0: bool = False,
 ) -> Path:
+    del skip_filter0  # Sankey always shows post–Filter 0 flow (deprecated flag)
+
     df = load_summary(csv_path)
     filters = get_filter_rows(df)
-    waterfall_filters, baseline_note = prepare_waterfall_filters(filters, skip_filter0)
+    sankey_filters = prepare_filters_for_sankey(filters)
+    accuracy_filters = prepare_filters_for_accuracy(df)
     f0_to_last_reduction = compute_f0_to_last_reduction(filters)
     overall_reduction = compute_overall_reduction(filters)
-    stats = compute_panel_b_stats(df)
+    accuracy = compute_filter_accuracy_stats(accuracy_filters)
+    failure_attribution = compute_failure_attribution(sankey_filters)
+    total_failures = int(failure_attribution["N_Failures"].sum())
+    stats = compute_panel_d_stats(df, accuracy)
 
-    fig, (ax_a, ax_b) = plt.subplots(
-        2, 1, figsize=(10, 8.5), gridspec_kw={"height_ratios": [1.1, 1.0], "hspace": 0.28}
+    fig = plt.figure(figsize=(FIG_WIDTH, FIG_HEIGHT))
+    gs = fig.add_gridspec(
+        2,
+        2,
+        height_ratios=[1, 1],
+        width_ratios=[1, 1],
+        hspace=0.40,
+        wspace=0.32,
     )
+    ax_a = fig.add_subplot(gs[0, 0])
+    ax_b = fig.add_subplot(gs[0, 1])
+    ax_c = fig.add_subplot(gs[1, 0])
+    ax_d = fig.add_subplot(gs[1, 1])
 
-    plot_waterfall(
-        ax_a,
-        waterfall_filters,
-        f0_to_last_reduction,
-        overall_reduction,
-        baseline_note=baseline_note,
+    plot_search_space_sankey(ax_a, sankey_filters, f0_to_last_reduction, overall_reduction)
+    plot_filter_accuracy_lines(
+        ax_b,
+        accuracy,
+        title="Filter accuracy vs random baseline",
     )
-    footnote = plot_benchmark_bars(ax_b, stats, overall_reduction)
+    plot_failure_attribution_bars(ax_c, failure_attribution, total_failures)
+    footnote = plot_benchmark_bars(ax_d, stats, overall_reduction)
     fig.text(0.5, 0.02, footnote, ha="center", va="bottom", fontsize=7, color="#555555")
-    fig.subplots_adjust(left=0.09, right=0.98, top=0.97, bottom=0.18)
+    fig.subplots_adjust(left=0.09, right=0.98, top=0.96, bottom=0.12)
 
     if output_path is None:
         output_path = csv_path.with_suffix(".png")
@@ -386,7 +350,7 @@ def create_figure(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Create waterfall + benchmark figure from an eval_frank summary CSV."
+        description="Create eval summary figure (Sankey + accuracy + failure + benchmarks)."
     )
     parser.add_argument(
         "summary_csv", type=Path, help="Path to summary CSV (e.g. summary_eval_frank.csv)."
@@ -401,10 +365,7 @@ def main() -> None:
     parser.add_argument(
         "--skip-filter0",
         action="store_true",
-        help=(
-            "Omit nucleophilic selection (Filter 0) from the waterfall and rebase "
-            "abs. reduction % onto Avg_N_After from Filter 0."
-        ),
+        help="Deprecated: Panel A Sankey always shows post-nucleophilic filters only.",
     )
     args = parser.parse_args()
 

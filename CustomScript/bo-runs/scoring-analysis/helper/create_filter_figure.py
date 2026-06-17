@@ -231,6 +231,9 @@ def plot_hit3_bars(
     title: str,
     subtitle: str,
     rotate_x: float = 0,
+    legend_loc: str = "upper right",
+    legend_bbox: tuple[float, float] = (1.0, 1.12),
+    legend_ncol: int = 1,
 ) -> None:
     x = np.arange(len(labels))
     width = 0.36
@@ -291,7 +294,14 @@ def plot_hit3_bars(
         ax.margins(x=0.06)
     ax.set_ylabel("Top 3 rankable hit (%)")
     ax.set_ylim(0, min(ymax + 18, 115))
-    ax.legend(loc="upper right", frameon=True, fontsize=8)
+    ax.legend(
+        loc=legend_loc,
+        bbox_to_anchor=legend_bbox,
+        borderaxespad=0,
+        frameon=True,
+        fontsize=8,
+        ncol=legend_ncol,
+    )
     ax.set_title(f"{panel_label}  {title}", loc="left", fontweight="bold", fontsize=11)
     ax.text(0.0, -0.22, subtitle, transform=ax.transAxes, fontsize=7, color="#555555", va="top")
     ax.spines["top"].set_visible(False)
@@ -304,7 +314,7 @@ def create_figure(
     breakdown_path: Path,
     output_path: Path | None = None,
     *,
-    sasa_threshold: float = 0.12,
+    sasa_threshold: float = 12,
     deprot_threshold: float = 0.14,
     min_warhead_rankable: int = 100,
 ) -> Path:
@@ -399,7 +409,7 @@ def main() -> None:
     parser.add_argument(
         "--sasa-threshold",
         type=float,
-        default=0.12,
+        default=12,
         help="Chosen RSA threshold for Panel A annotation (default: 0.12).",
     )
     parser.add_argument(

@@ -11,6 +11,11 @@ score filter) on a training CSV against a labels CSV to report:
   - Per-filter average absolute and relative search-space reduction
   - Average total search-space reduction
   - Per-label row-level output CSV (one hit max per electrophile target site)
+  - Summary CSV with overall, per-residue hit rates, per-filter stats (nucleophilic
+    residues only: CYS, HIS, SER, LYS, TYR, THR), and per-residue per-filter stats
+    (Filter_Residue_Type group; same residue restriction). Filter rows include
+    Total/Avg/N_Count and *_If_Match variants (latter exclude warhead evals whose
+    target was already eliminated upstream).
   - Optional --warhead_comparison for per-(Name × Warhead × Target) analysis
 
 FILTER TYPES
@@ -40,12 +45,12 @@ HIT COUNTING (default)
 By default, hit rate is computed per label (Name + Residue + ResNum + Chain).
 An electrophile may have multiple matching warheads in training, but it can
 contribute at most one hit: the label is a hit if ANY matching warhead's filter
-pipeline keeps the target residue alive. Detail-row search-space reduction
+pipeline keeps the exact labeled site (Residue + ResNum + Chain) alive. Detail-row search-space reduction
 values are averaged across all matching warhead evaluations for that label.
 
-Summary search-space reduction (per-filter and total averages) is always
-computed from warhead-level evaluations in both modes. Only hit-rate counting
-differs between default and --warhead-comparison.
+Summary search-space reduction (per-filter and total averages) and per-filter
+failure counts are always computed from warhead-level evaluations. Hit rate
+uses per label by default, per (label × warhead) with --warhead-comparison.
 
 Use --warhead-comparison to restore per-(label × warhead) hit counting and
 per-warhead detail output.
@@ -86,6 +91,9 @@ Usage
     --reactivity-top-k 3 \
     --output-detail detail_baby_frank.csv \
     --output-summary summary_baby_frank.csv
+
+
+    python baby_frank.py     --training training_eval.csv     --labels batch_pdbs_deprot_with_name.csv     --pdb-dir ../../Existing_Structures     --filters Rel_Side_SASA gte 12 deprotonation_prob gte 0.14     --lgbm-model lgbm_model_TOP2.pkl     --lgbm-position 3     --lgbm-top-k 3     --output-detail detail_eval_frank_moreinfo.csv     --output-summary summary_eval_frank_moreinfo.csv --perfect-match
     """
 
 from __future__ import annotations
@@ -405,6 +413,31 @@ def label_key(name, residue, res_num, chain) -> tuple[str, str, str, str]:
     )
 
 
+def target_site_mask(
+    df: pd.DataFrame,
+    residue: str,
+    res_num,
+    chain,
+) -> pd.Series:
+    """Boolean mask for the exact labeled site (Residue + ResNum + Chain)."""
+    return (
+        (df["_res_upper"] == str(residue).strip().upper())
+        & (df["ResNum"].astype(str) == str(res_num).strip())
+        & (df["Chain"].astype(str) == str(chain).strip())
+    )
+
+
+def target_site_in_df(
+    df: pd.DataFrame,
+    residue: str,
+    res_num,
+    chain,
+) -> bool:
+    if df.empty:
+        return False
+    return bool(target_site_mask(df, residue, res_num, chain).any())
+
+
 def _average_reduction_fields(rows: list[dict]) -> dict[str, object]:
     """Average Abs/Rel reduction columns across warhead-level rows."""
     if not rows:
@@ -424,6 +457,19 @@ def _average_reduction_fields(rows: list[dict]) -> dict[str, object]:
         for key in row
         if key.endswith("_Passed")
     }
+    count_keys = {
+        key
+        for row in rows
+        for key in row
+        if key.endswith("_ResidueCount") or key == "Starting_Residue_Count"
+        or key == "Filter0_Starting_Residue_Count"
+    }
+    rank_keys = {
+        key
+        for row in rows
+        for key in row
+        if key.endswith("_Rank")
+    }
 
     averaged: dict[str, object] = {}
     for key in reduction_keys:
@@ -437,6 +483,22 @@ def _average_reduction_fields(rows: list[dict]) -> dict[str, object]:
     for key in passed_keys:
         vals = [row.get(key) for row in rows if row.get(key) is not None]
         averaged[key] = any(vals) if vals else None
+
+    for key in count_keys:
+        vals = [
+            float(row[key])
+            for row in rows
+            if row.get(key) is not None and not pd.isna(row.get(key))
+        ]
+        averaged[key] = int(round(float(np.mean(vals)))) if vals else None
+
+    for key in rank_keys:
+        vals = [
+            float(row[key])
+            for row in rows
+            if row.get(key) is not None and not pd.isna(row.get(key))
+        ]
+        averaged[key] = round(float(np.mean(vals)), 4) if vals else None
 
     return averaged
 
@@ -511,6 +573,143 @@ def annotate_warhead_detail_rows(detail_rows: list[dict]) -> list[dict]:
         copy["Hitting_Warheads"] = wh if copy.get("Hit") else ""
         annotated.append(copy)
     return annotated
+
+
+def compute_filter_fail_counts_by_residue(
+    failure_rows: list[dict],
+    n_filters: int,
+) -> dict[str, list[int]]:
+    """Per-residue filter failure counts (one per warhead evaluation)."""
+    from collections import defaultdict
+
+    by_residue: dict[str, list[int]] = defaultdict(lambda: [0] * n_filters)
+    for row in failure_rows:
+        if row.get("Hit"):
+            continue
+        failing_filter = row.get("Failing_Filter")
+        if failing_filter is None or pd.isna(failing_filter):
+            continue
+        residue = str(row["Residue"])
+        by_residue[residue][int(failing_filter) - 1] += 1
+    return dict(by_residue)
+
+
+def _mean_round(vals: list[float], ndigits: int = 1) -> float | None:
+    if not vals:
+        return None
+    return round(float(np.mean(vals)), ndigits)
+
+
+def _avg_sum_count(
+    vals: list[float],
+    ndigits: int = 1,
+) -> tuple[float | None, float | None, int | None]:
+    """Return (avg, total, n_count) for summary filter-level N statistics."""
+    if not vals:
+        return None, None, None
+    total = float(sum(vals))
+    n = len(vals)
+    return round(total / n, ndigits), round(total, 1), n
+
+
+def _flatten_residue_vals(
+    by_residue: dict[str, list[float]],
+    residues: set[str] | frozenset[str],
+) -> list[float]:
+    """Concatenate per-residue value lists for the given residue types."""
+    vals: list[float] = []
+    for residue in sorted(residues):
+        vals.extend(by_residue.get(residue, []))
+    return vals
+
+
+def _filter_n_summary_columns(
+    before_vals: list[float],
+    after_vals: list[float],
+    *,
+    if_match: bool = False,
+) -> dict:
+    """Build Total/Avg/N_Count summary fields (optionally the If_Match variants)."""
+    suffix = "_If_Match" if if_match else ""
+    avg_b, tot_b, n = _avg_sum_count(before_vals)
+    avg_a, tot_a, _ = _avg_sum_count(after_vals)
+    return {
+        f"Total_N_Before{suffix}": tot_b,
+        f"Total_N_After{suffix}":  tot_a,
+        f"N_Count{suffix}":        n,
+        f"Avg_N_Before{suffix}":   avg_b,
+        f"Avg_N_After{suffix}":    avg_a,
+    }
+
+
+def build_filter_residue_summary_rows(
+    residue_order: list[str],
+    res_totals: dict[str, int],
+    filter0_label: str,
+    filter_labels: list[str],
+    filter_fail_by_residue: dict[str, list[int]],
+    filter0_abs_by_residue: dict[str, list[float]],
+    filter0_rel_by_residue: dict[str, list[float]],
+    filter0_n_before_by_residue: dict[str, list[float]],
+    filter0_n_after_by_residue: dict[str, list[float]],
+    filter_abs_by_residue: list[dict[str, list[float]]],
+    filter_rel_by_residue: list[dict[str, list[float]]],
+    filter_n_before_by_residue: list[dict[str, list[float]]],
+    filter_n_after_by_residue: list[dict[str, list[float]]],
+    filter0_n_before_if_match_by_residue: dict[str, list[float]],
+    filter0_n_after_if_match_by_residue: dict[str, list[float]],
+    filter_n_before_if_match_by_residue: list[dict[str, list[float]]],
+    filter_n_after_if_match_by_residue: list[dict[str, list[float]]],
+) -> list[dict]:
+    """One summary row per (residue, filter) with the same stats as overall Filter rows."""
+    rows: list[dict] = []
+    n_filters = len(filter_labels)
+
+    for residue in residue_order:
+        n_matchable = res_totals.get(residue, 0)
+        fail_counts = filter_fail_by_residue.get(residue, [0] * n_filters)
+
+        f0_n_before = filter0_n_before_by_residue.get(residue, [])
+        f0_n_after  = filter0_n_after_by_residue.get(residue, [])
+        f0_im_before = filter0_n_before_if_match_by_residue.get(residue, [])
+        f0_im_after  = filter0_n_after_if_match_by_residue.get(residue, [])
+
+        rows.append({
+            "Group":                 "Filter_Residue_Type",
+            "Category":              residue,
+            "Filter":                filter0_label,
+            "N_Matchable":           n_matchable,
+            "N_Failures":            0,
+            **_filter_n_summary_columns(f0_n_before, f0_n_after),
+            **_filter_n_summary_columns(f0_im_before, f0_im_after, if_match=True),
+            "Avg_Abs_Reduction_Pct": _mean_round(
+                [v * 100.0 for v in filter0_abs_by_residue.get(residue, [])]
+            ),
+            "Avg_Rel_Reduction_Pct": _mean_round(
+                [v * 100.0 for v in filter0_rel_by_residue.get(residue, [])]
+            ),
+        })
+
+        for f_idx, fl in enumerate(filter_labels):
+            abs_vals = filter_abs_by_residue[f_idx].get(residue, [])
+            rel_vals = filter_rel_by_residue[f_idx].get(residue, [])
+            n_before = filter_n_before_by_residue[f_idx].get(residue, [])
+            n_after  = filter_n_after_by_residue[f_idx].get(residue, [])
+            im_before = filter_n_before_if_match_by_residue[f_idx].get(residue, [])
+            im_after  = filter_n_after_if_match_by_residue[f_idx].get(residue, [])
+            rows.append({
+                "Group":                 "Filter_Residue_Type",
+                "Category":              residue,
+                "Filter":                fl,
+                "N_Matchable":           n_matchable,
+                "N_Failures":            fail_counts[f_idx],
+                **_filter_n_summary_columns(n_before, n_after),
+                **_filter_n_summary_columns(im_before, im_after, if_match=True),
+                "Avg_Abs_Reduction_Pct": _mean_round([v * 100.0 for v in abs_vals]),
+                "Avg_Rel_Reduction_Pct": _mean_round([v * 100.0 for v in rel_vals]),
+            })
+
+    return rows
 
 
 # ─────────────────────────────────────────────────────────────
@@ -662,6 +861,9 @@ def run_analysis(
         f.label if hasattr(f, "label") else str(f)
         for f in ordered
     ]
+    lgbm_filter_indices = {
+        i for i, f in enumerate(ordered) if isinstance(f, LGBMRankerFilter)
+    }
 
     # Filter 0 is always present: nucleophilic residue selection
     filter0_label = "Nucleophilic residue selection (Filter 0)"
@@ -800,10 +1002,11 @@ def run_analysis(
 
     # ── Per-entry analysis ────────────────────────────────────────────────
     # Accumulators for Filter 0 (nucleophilic selection) and Filters 1..N
+    from collections import defaultdict
+
     filter0_abs_reductions: list[float] = []   # one per matchable entry
     filter0_rel_reductions: list[float] = []
 
-    filter_fail_counts     = [0] * n_filters
     filter_abs_reductions  = [[] for _ in range(n_filters)]
     filter_rel_reductions  = [[] for _ in range(n_filters)]
 
@@ -811,6 +1014,19 @@ def run_analysis(
     filter0_n_after_counts:  list[float] = []
     filter_n_before_counts = [[] for _ in range(n_filters)]
     filter_n_after_counts  = [[] for _ in range(n_filters)]
+
+    filter0_abs_by_residue: dict[str, list[float]] = defaultdict(list)
+    filter0_rel_by_residue: dict[str, list[float]] = defaultdict(list)
+    filter0_n_before_by_residue: dict[str, list[float]] = defaultdict(list)
+    filter0_n_after_by_residue: dict[str, list[float]] = defaultdict(list)
+    filter_abs_by_residue = [defaultdict(list) for _ in range(n_filters)]
+    filter_rel_by_residue = [defaultdict(list) for _ in range(n_filters)]
+    filter_n_before_by_residue = [defaultdict(list) for _ in range(n_filters)]
+    filter_n_after_by_residue = [defaultdict(list) for _ in range(n_filters)]
+    filter_n_before_if_match = [[] for _ in range(n_filters)]
+    filter_n_after_if_match  = [[] for _ in range(n_filters)]
+    filter_n_before_if_match_by_residue = [defaultdict(list) for _ in range(n_filters)]
+    filter_n_after_if_match_by_residue  = [defaultdict(list) for _ in range(n_filters)]
 
     detail_rows = []
 
@@ -841,12 +1057,20 @@ def run_analysis(
             row["Hit"]            = False
             row["Miss_Reason"]    = "warhead_mismatch"
             row["Failing_Filter"] = None
+            row["Filter0_Starting_Residue_Count"] = None
+            row["Starting_Residue_Count"] = None
+            row["Deprotonation_Target_Rank"] = None
+            row["LGBM_Target_Rank"] = None
+            row["Combo_Target_Rank"] = None
             row[f"Filter0_{filter0_label}_AbsReduction"] = None
             row[f"Filter0_{filter0_label}_RelReduction"] = None
             for i, fl in enumerate(filter_labels):
                 row[f"Filter{i+1}_{fl}_AbsReduction"] = None
                 row[f"Filter{i+1}_{fl}_RelReduction"] = None
                 row[f"Filter{i+1}_{fl}_Passed"]       = None
+                row[f"Filter{i+1}_{fl}_ResidueCount"] = None
+                if i in lgbm_filter_indices:
+                    row[f"Filter{i+1}_{fl}_LGBM_Ranked_Residues"] = None
             row["Total_AbsReduction"] = None
             row["Total_RelReduction"] = None
             detail_rows.append(row)
@@ -863,12 +1087,20 @@ def run_analysis(
             row["Hit"]            = False
             row["Miss_Reason"]    = "no_training_rows"
             row["Failing_Filter"] = None
+            row["Filter0_Starting_Residue_Count"] = None
+            row["Starting_Residue_Count"] = None
+            row["Deprotonation_Target_Rank"] = None
+            row["LGBM_Target_Rank"] = None
+            row["Combo_Target_Rank"] = None
             row[f"Filter0_{filter0_label}_AbsReduction"] = None
             row[f"Filter0_{filter0_label}_RelReduction"] = None
             for i, fl in enumerate(filter_labels):
                 row[f"Filter{i+1}_{fl}_AbsReduction"] = None
                 row[f"Filter{i+1}_{fl}_RelReduction"] = None
                 row[f"Filter{i+1}_{fl}_Passed"]       = None
+                row[f"Filter{i+1}_{fl}_ResidueCount"] = None
+                if i in lgbm_filter_indices:
+                    row[f"Filter{i+1}_{fl}_LGBM_Ranked_Residues"] = None
             row["Total_AbsReduction"] = None
             row["Total_RelReduction"] = None
             detail_rows.append(row)
@@ -888,19 +1120,28 @@ def run_analysis(
         filter0_rel_reductions.append(f0_rel)
         filter0_n_before_counts.append(float(n_denom))
         filter0_n_after_counts.append(float(n_initial))
+        filter0_abs_by_residue[res].append(f0_abs)
+        filter0_rel_by_residue[res].append(f0_rel)
+        filter0_n_before_by_residue[res].append(float(n_denom))
+        filter0_n_after_by_residue[res].append(float(n_initial))
         row[f"Filter0_{filter0_label}_AbsReduction"] = round(f0_abs, 4)
         row[f"Filter0_{filter0_label}_RelReduction"] = round(f0_rel, 4)
 
         # ── Filters 1..N ──────────────────────────────────────────────────
         full_pool    = full_pools.get((name, wh), group_df)
         current_df   = group_df.copy()
-        target_alive = res in current_df["_res_upper"].values
+        target_alive = target_site_in_df(
+            current_df, res, entry["res_num"], entry["chain"]
+        )
 
         failing_filter = None
         filter_results: list[dict] = []
+        lgbm_type_scores: dict[str, float] | None = None
 
         for f_idx, filt in enumerate(ordered):
+            target_alive_at_entry = target_alive
             n_before = len(current_df)
+            lgbm_ranked_residues = None
 
             if isinstance(filt, SimpleFilter):
                 pass_mask = filt.apply(current_df)
@@ -919,6 +1160,19 @@ def run_analysis(
                     type_df["_rank"] = type_df["_score"].rank(
                         method="min", ascending=False
                     )
+                    if isinstance(filt, LGBMRankerFilter):
+                        lgbm_type_scores = dict(
+                            zip(
+                                type_df["_res_upper"].astype(str),
+                                type_df["_score"].astype(float),
+                            )
+                        )
+                        type_df_sorted = type_df.sort_values(
+                            "_score", ascending=False
+                        )
+                        lgbm_ranked_residues = ",".join(
+                            type_df_sorted["_res_upper"].astype(str).tolist()
+                        )
                     surviving_types = type_df[
                         type_df["_rank"] <= filt.top_k
                     ]["_res_upper"].values
@@ -940,20 +1194,34 @@ def run_analysis(
 
             filter_abs_reductions[f_idx].append(abs_red)
             filter_rel_reductions[f_idx].append(rel_red)
+            filter_n_before_by_residue[f_idx][res].append(n_before)
+            filter_n_after_by_residue[f_idx][res].append(n_after)
+            filter_abs_by_residue[f_idx][res].append(abs_red)
+            filter_rel_by_residue[f_idx][res].append(rel_red)
 
-            target_survived = res in next_df["_res_upper"].values
+            if target_alive_at_entry:
+                nb, na = float(n_before), float(n_after)
+                filter_n_before_if_match[f_idx].append(nb)
+                filter_n_after_if_match[f_idx].append(na)
+                filter_n_before_if_match_by_residue[f_idx][res].append(nb)
+                filter_n_after_if_match_by_residue[f_idx][res].append(na)
+
+            target_survived = target_site_in_df(
+                next_df, res, entry["res_num"], entry["chain"]
+            )
             filter_passed   = target_survived or not target_alive
 
             if target_alive and not target_survived:
                 if failing_filter is None:
                     failing_filter = f_idx + 1
-                    filter_fail_counts[f_idx] += 1
                 target_alive = False
 
             filter_results.append({
                 "abs_red": abs_red,
                 "rel_red": rel_red,
                 "passed":  filter_passed,
+                "residue_count": n_after,
+                "lgbm_ranked_residues": lgbm_ranked_residues,
             })
 
             current_df = next_df
@@ -969,11 +1237,61 @@ def run_analysis(
         row["Hit"]            = hit
         row["Miss_Reason"]    = None if hit else "filtered_out"
         row["Failing_Filter"] = failing_filter
+        row["Filter0_Starting_Residue_Count"] = n_denom
+        row["Starting_Residue_Count"] = n_initial
+        row["Deprotonation_Target_Rank"] = None
+        row["LGBM_Target_Rank"] = None
+        row["Combo_Target_Rank"] = None
+
+        if hit and len(current_df) > 0:
+            target_mask = target_site_mask(
+                current_df, res, entry["res_num"], entry["chain"]
+            )
+
+            if "deprotonation_prob" in current_df.columns:
+                deprot_scores = pd.to_numeric(
+                    current_df["deprotonation_prob"], errors="coerce"
+                )
+                deprot_ranks = deprot_scores.rank(method="min", ascending=False)
+                if target_mask.any():
+                    row["Deprotonation_Target_Rank"] = int(
+                        deprot_ranks[target_mask].min()
+                    )
+
+            if lgbm_filter is not None and lgbm_type_scores:
+                surviving_types = current_df["_res_upper"].astype(str).unique()
+                type_scores = pd.Series(
+                    {
+                        t: lgbm_type_scores.get(t, float("-inf"))
+                        for t in surviving_types
+                    }
+                )
+                survivor_type_ranks = type_scores.rank(method="min", ascending=False)
+                if res in survivor_type_ranks.index:
+                    row["LGBM_Target_Rank"] = int(survivor_type_ranks[res])
+
+                k = max(1, int(lgbm_filter.top_k))
+                reactivity_by_type = (
+                    1.0 - (survivor_type_ranks - 1.0) / float(k)
+                ).clip(lower=0.0)
+                reactivity_component = current_df["_res_upper"].astype(str).map(
+                    reactivity_by_type
+                )
+                if "deprotonation_prob" in current_df.columns:
+                    combo_scores = deprot_scores.fillna(0.0) + reactivity_component
+                    combo_ranks = combo_scores.rank(method="min", ascending=False)
+                    if target_mask.any():
+                        row["Combo_Target_Rank"] = int(combo_ranks[target_mask].min())
 
         for f_idx, (fl, fr) in enumerate(zip(filter_labels, filter_results)):
             row[f"Filter{f_idx+1}_{fl}_AbsReduction"] = round(fr["abs_red"], 4)
             row[f"Filter{f_idx+1}_{fl}_RelReduction"] = round(fr["rel_red"], 4)
             row[f"Filter{f_idx+1}_{fl}_Passed"]       = fr["passed"]
+            row[f"Filter{f_idx+1}_{fl}_ResidueCount"] = fr["residue_count"]
+            if fr.get("lgbm_ranked_residues") is not None:
+                row[f"Filter{f_idx+1}_{fl}_LGBM_Ranked_Residues"] = (
+                    fr["lgbm_ranked_residues"]
+                )
 
         row["Total_AbsReduction"] = round(total_abs, 4)
         row["Total_RelReduction"] = round(total_abs, 4)  # same denom for total
@@ -998,6 +1316,24 @@ def run_analysis(
     n_matchable_total = len(matchable_rows)
     n_hits            = len(hit_rows)
     overall_hit_rate  = n_hits / n_matchable_total if n_matchable_total > 0 else 0.0
+    deprot_hit_ranks = [
+        float(r["Deprotonation_Target_Rank"])
+        for r in hit_rows
+        if r.get("Deprotonation_Target_Rank") is not None
+        and not pd.isna(r.get("Deprotonation_Target_Rank"))
+    ]
+    lgbm_hit_ranks = [
+        float(r["LGBM_Target_Rank"])
+        for r in hit_rows
+        if r.get("LGBM_Target_Rank") is not None
+        and not pd.isna(r.get("LGBM_Target_Rank"))
+    ]
+    combo_hit_ranks = [
+        float(r["Combo_Target_Rank"])
+        for r in hit_rows
+        if r.get("Combo_Target_Rank") is not None
+        and not pd.isna(r.get("Combo_Target_Rank"))
+    ]
 
     from collections import defaultdict
     res_hits   = defaultdict(int)
@@ -1007,14 +1343,22 @@ def run_analysis(
         if r["Hit"]:
             res_hits[r["Residue"]] += 1
 
-    # Reduction summaries always use warhead-level evaluations (same in both modes).
-    filter_fail_counts = [0] * n_filters
-    for r in warhead_matchable_rows:
+    # Per-filter failure counts: one per warhead evaluation (matches Total_N stats).
+    filter_analysis_residues = DEFAULT_RESIDUE_TYPES
+    failure_count_rows = warhead_matchable_rows
+    filter_fail_counts_nuc = [0] * n_filters
+    for r in failure_count_rows:
+        if r["Residue"] not in filter_analysis_residues:
+            continue
         if r["Hit"]:
             continue
         failing_filter = r.get("Failing_Filter")
         if failing_filter is not None and not pd.isna(failing_filter):
-            filter_fail_counts[int(failing_filter) - 1] += 1
+            filter_fail_counts_nuc[int(failing_filter) - 1] += 1
+    filter_fail_by_residue = compute_filter_fail_counts_by_residue(
+        failure_count_rows,
+        n_filters,
+    )
 
     # ── Print summary ─────────────────────────────────────────────────────
     print("\n" + "=" * 70)
@@ -1041,27 +1385,33 @@ def run_analysis(
 
     print(f"\n  Warhead mismatches: {n_mismatch:,}")
 
-    print(f"\n  Per-filter failure counts (target removed at this filter):")
+    nuc_note = (
+        f" (nucleophilic residues only: {', '.join(sorted(filter_analysis_residues))})"
+    )
+    print(f"\n  Per-filter failure counts (target removed at this filter)"
+          f" [per warhead evaluation; hit rate above: {hit_mode}]{nuc_note}:")
     print(f"  {'#':<4} {'Filter':<55} {'Failures':>8}")
     print("  " + "-" * 70)
     for i, fl in enumerate(filter_labels):
-        print(f"  {i+1:<4} {fl:<55} {filter_fail_counts[i]:>8}")
+        print(f"  {i+1:<4} {fl:<55} {filter_fail_counts_nuc[i]:>8}")
 
-    print(f"\n  Per-filter average search-space reduction:")
+    print(f"\n  Per-filter average search-space reduction{nuc_note}:")
     denom_note = "(denom = PDB total residues)" if use_pdb_denom else "(denom = nucleophilic candidates)"
     print(f"  Absolute reduction {denom_note}")
     print(f"  {'#':<4} {'Filter':<45} {'Abs Reduction':>15} {'Rel Reduction':>15}")
     print("  " + "-" * 82)
 
     # Filter 0
-    avg_f0_abs = np.mean(filter0_abs_reductions) if filter0_abs_reductions else 0.0
-    avg_f0_rel = np.mean(filter0_rel_reductions) if filter0_rel_reductions else 0.0
+    f0_abs_vals = _flatten_residue_vals(filter0_abs_by_residue, filter_analysis_residues)
+    f0_rel_vals = _flatten_residue_vals(filter0_rel_by_residue, filter_analysis_residues)
+    avg_f0_abs = np.mean(f0_abs_vals) if f0_abs_vals else 0.0
+    avg_f0_rel = np.mean(f0_rel_vals) if f0_rel_vals else 0.0
     print(f"  {'0':<4} {'Nucleophilic residue selection':<45} "
           f"{avg_f0_abs*100:>14.1f}%  {avg_f0_rel*100:>14.1f}%")
 
     for i, fl in enumerate(filter_labels):
-        abs_vals = filter_abs_reductions[i]
-        rel_vals = filter_rel_reductions[i]
+        abs_vals = _flatten_residue_vals(filter_abs_by_residue[i], filter_analysis_residues)
+        rel_vals = _flatten_residue_vals(filter_rel_by_residue[i], filter_analysis_residues)
         avg_abs  = np.mean(abs_vals) if abs_vals else 0.0
         avg_rel  = np.mean(rel_vals) if rel_vals else 0.0
         print(f"  {i+1:<4} {fl:<45} {avg_abs*100:>14.1f}%  {avg_rel*100:>14.1f}%")
@@ -1091,6 +1441,15 @@ def run_analysis(
         "N_Misses":          n_matchable_total - n_hits,
         "Hit_Rate_Pct":      round(overall_hit_rate * 100, 1),
         "N_Warhead_Mismatch": n_mismatch,
+        "Avg_Deprotonation_Target_Rank_Hit_Only": (
+            round(float(np.mean(deprot_hit_ranks)), 4) if deprot_hit_ranks else None
+        ),
+        "Avg_LGBM_Target_Rank_Hit_Only": (
+            round(float(np.mean(lgbm_hit_ranks)), 4) if lgbm_hit_ranks else None
+        ),
+        "Avg_Combo_Target_Rank_Hit_Only": (
+            round(float(np.mean(combo_hit_ranks)), 4) if combo_hit_ranks else None
+        ),
     })
     for res in sorted(res_totals):
         h = res_hits[res]
@@ -1104,33 +1463,76 @@ def run_analysis(
             "Hit_Rate_Pct":      round(h / t * 100, 1) if t else None,
             "N_Warhead_Mismatch": None,
         })
-    # Filter 0
-    # Filter 0
-    avg_f0_n_before = np.mean(filter0_n_before_counts) if filter0_n_before_counts else None
-    avg_f0_n_after  = np.mean(filter0_n_after_counts)  if filter0_n_after_counts  else None
+    # Filter 0 (nucleophilic residue types only)
+    f0_n_before_vals = _flatten_residue_vals(
+        filter0_n_before_by_residue, filter_analysis_residues
+    )
+    f0_n_after_vals = _flatten_residue_vals(
+        filter0_n_after_by_residue, filter_analysis_residues
+    )
+    avg_f0_n_before, total_f0_n_before, f0_n_count = _avg_sum_count(f0_n_before_vals)
+    avg_f0_n_after,  total_f0_n_after,  _          = _avg_sum_count(f0_n_after_vals)
+    f0_im_before_vals = f0_n_before_vals
+    f0_im_after_vals  = f0_n_after_vals
     summary_rows.append({
         "Group":    "Filter",
         "Category": filter0_label,
+        "Filter":   filter0_label,
         "N_Failures":            0,
-        "Avg_N_Before":          round(avg_f0_n_before, 1) if avg_f0_n_before is not None else None,
-        "Avg_N_After":           round(avg_f0_n_after,  1) if avg_f0_n_after  is not None else None,
-        "Avg_Abs_Reduction_Pct": round(avg_f0_abs * 100, 1) if filter0_abs_reductions else None,
-        "Avg_Rel_Reduction_Pct": round(avg_f0_rel * 100, 1) if filter0_rel_reductions else None,
+        **_filter_n_summary_columns(f0_n_before_vals, f0_n_after_vals),
+        **_filter_n_summary_columns(f0_im_before_vals, f0_im_after_vals, if_match=True),
+        "Avg_Abs_Reduction_Pct": round(avg_f0_abs * 100, 1) if f0_abs_vals else None,
+        "Avg_Rel_Reduction_Pct": round(avg_f0_rel * 100, 1) if f0_rel_vals else None,
     })
     for i, fl in enumerate(filter_labels):
-        abs_vals = filter_abs_reductions[i]
-        rel_vals = filter_rel_reductions[i]
-        avg_n_before = np.mean(filter_n_before_counts[i]) if filter_n_before_counts[i] else None
-        avg_n_after  = np.mean(filter_n_after_counts[i])  if filter_n_after_counts[i]  else None
+        abs_vals = _flatten_residue_vals(filter_abs_by_residue[i], filter_analysis_residues)
+        rel_vals = _flatten_residue_vals(filter_rel_by_residue[i], filter_analysis_residues)
+        n_before_vals = _flatten_residue_vals(
+            filter_n_before_by_residue[i], filter_analysis_residues
+        )
+        n_after_vals = _flatten_residue_vals(
+            filter_n_after_by_residue[i], filter_analysis_residues
+        )
+        im_before_vals = _flatten_residue_vals(
+            filter_n_before_if_match_by_residue[i], filter_analysis_residues
+        )
+        im_after_vals = _flatten_residue_vals(
+            filter_n_after_if_match_by_residue[i], filter_analysis_residues
+        )
         summary_rows.append({
             "Group":    "Filter",
             "Category": fl,
-            "N_Failures":            filter_fail_counts[i],
-            "Avg_N_Before":          round(avg_n_before, 1) if avg_n_before is not None else None,
-            "Avg_N_After":           round(avg_n_after,  1) if avg_n_after  is not None else None,
+            "Filter":   fl,
+            "N_Failures":            filter_fail_counts_nuc[i],
+            **_filter_n_summary_columns(n_before_vals, n_after_vals),
+            **_filter_n_summary_columns(im_before_vals, im_after_vals, if_match=True),
             "Avg_Abs_Reduction_Pct": round(np.mean(abs_vals) * 100, 1) if abs_vals else None,
             "Avg_Rel_Reduction_Pct": round(np.mean(rel_vals) * 100, 1) if rel_vals else None,
         })
+    filter_residue_order = sorted(
+        r for r in res_totals if r in filter_analysis_residues
+    )
+    summary_rows.extend(
+        build_filter_residue_summary_rows(
+            residue_order=filter_residue_order,
+            res_totals=res_totals,
+            filter0_label=filter0_label,
+            filter_labels=filter_labels,
+            filter_fail_by_residue=filter_fail_by_residue,
+            filter0_abs_by_residue=dict(filter0_abs_by_residue),
+            filter0_rel_by_residue=dict(filter0_rel_by_residue),
+            filter0_n_before_by_residue=dict(filter0_n_before_by_residue),
+            filter0_n_after_by_residue=dict(filter0_n_after_by_residue),
+            filter_abs_by_residue=[dict(d) for d in filter_abs_by_residue],
+            filter_rel_by_residue=[dict(d) for d in filter_rel_by_residue],
+            filter_n_before_by_residue=[dict(d) for d in filter_n_before_by_residue],
+            filter_n_after_by_residue=[dict(d) for d in filter_n_after_by_residue],
+            filter0_n_before_if_match_by_residue=dict(filter0_n_before_by_residue),
+            filter0_n_after_if_match_by_residue=dict(filter0_n_after_by_residue),
+            filter_n_before_if_match_by_residue=[dict(d) for d in filter_n_before_if_match_by_residue],
+            filter_n_after_if_match_by_residue=[dict(d) for d in filter_n_after_if_match_by_residue],
+        )
+    )
     summary_df = pd.DataFrame(summary_rows)
     if output_summary:
         summary_df.to_csv(output_summary, index=False)
