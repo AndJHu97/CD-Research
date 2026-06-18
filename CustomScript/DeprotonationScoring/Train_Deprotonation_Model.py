@@ -4,7 +4,7 @@ Deprotonation_Model.py
 Train an XGBoost regressor to predict deprotonation probability from features:
 - Physiologic pH (default 7.4)
 - H-bond weighted score (from HBonds_Score.py)
-- Charged residue counts (ARG/LYS/ASP/GLU) near the site (from APBS_Deprotonation.py)
+- Charged residue counts (ARG/LYS/ASP/GLU/HIS) near the site (from APBS_Deprotonation.py)
 - Electrostatic potential (from APBS_Deprotonation.py)
 - SASA (from pdb_sasa file or computed if missing)
 
@@ -198,6 +198,7 @@ def run_apbs_deprotonation(
 		"lys_count": _extract_int(text, r"LYS:\s*(\d+)"),
 		"asp_count": _extract_int(text, r"ASP:\s*(\d+)"),
 		"glu_count": _extract_int(text, r"GLU:\s*(\d+)"),
+		"his_count": _extract_int(text, r"HIS:\s*(\d+)"),
 	}
 
 	return {
@@ -270,9 +271,11 @@ def compute_charged_residue_counts(pdb_path: str, chain: str, resname: str, ress
 	nuc_xyz = (target["x"], target["y"], target["z"])
 	sphere_atoms = get_sphere_atoms(atoms, nuc_xyz, radius)
 	sphere_residues = {(atom["chain"], atom["resname"], atom["resseq"]) for atom in sphere_atoms}
-	counts = {"arg_count": 0, "lys_count": 0, "asp_count": 0, "glu_count": 0}
+	counts = {"arg_count": 0, "lys_count": 0, "asp_count": 0, "glu_count": 0, "his_count": 0}
 	for _, residue_name, _ in sphere_residues:
 		residue_name_u = residue_name.upper()
+		if residue_name_u in ("HIE", "HID", "HIP"):
+			residue_name_u = "HIS"
 		if residue_name_u == "ARG":
 			counts["arg_count"] += 1
 		elif residue_name_u == "LYS":
@@ -281,6 +284,8 @@ def compute_charged_residue_counts(pdb_path: str, chain: str, resname: str, ress
 			counts["asp_count"] += 1
 		elif residue_name_u == "GLU":
 			counts["glu_count"] += 1
+		elif residue_name_u == "HIS":
+			counts["his_count"] += 1
 	return counts
 
 
@@ -654,6 +659,7 @@ def main():
 		"lys_count",
 		"asp_count",
 		"glu_count",
+		"his_count",
 		"hbonds_weighted",
 		"hbonds_strict_flexible",
 		"resname",
@@ -671,6 +677,7 @@ def main():
 		"lys_count",
 		"asp_count",
 		"glu_count",
+		"his_count",
 		"hbonds_weighted",
 		"hbonds_strict_flexible",
 	]

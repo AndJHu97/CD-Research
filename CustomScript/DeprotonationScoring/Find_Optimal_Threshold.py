@@ -26,6 +26,7 @@ def main():
         "lys_count",
         "asp_count",
         "glu_count",
+        "his_count",
         "hbonds_weighted",
         "hbonds_strict_flexible",
         "resname",

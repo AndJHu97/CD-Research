@@ -902,9 +902,11 @@ def run_apbs_site_analysis(pdb_path, residue_spec, radius=8.0, ph=7.4,
         marker = " ← TARGET" if (rname == resname and rseq == resseq) else ""
         print(f"  {chain_id}:{rname}{rseq}{marker}")
 
-    residue_counts = {"ARG": 0, "LYS": 0, "ASP": 0, "GLU": 0}
+    residue_counts = {"ARG": 0, "LYS": 0, "ASP": 0, "GLU": 0, "HIS": 0}
     for _, rname, _ in sphere_residues:
         rname_u = rname.upper()
+        if rname_u in ("HIE", "HID", "HIP"):
+            rname_u = "HIS"
         if rname_u in residue_counts:
             residue_counts[rname_u] += 1
 
@@ -913,6 +915,7 @@ def run_apbs_site_analysis(pdb_path, residue_spec, radius=8.0, ph=7.4,
     print(f"  LYS: {residue_counts['LYS']}")
     print(f"  ASP: {residue_counts['ASP']}")
     print(f"  GLU: {residue_counts['GLU']}")
+    print(f"  HIS: {residue_counts['HIS']}")
 
     # --- 9. Interpret ---
     predicted_pka = interpret_potential(potential, resname)

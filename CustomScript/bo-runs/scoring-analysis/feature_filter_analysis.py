@@ -23,6 +23,8 @@ Usage:
         [--output-dir ./feature_analysis_output/] \\
         [--min-residue-positives 50] \\
         [--skip-per-residue]
+
+        python feature_filter_analysis.py   --training training_bo.csv   --labels labels_bo.csv   --features deprotonation_prob Rel_Side_SASA   --features-residue-type Nucleophilicity_Index_Deprotonated HOMO_LUMO_Gap_Deprotonated Fukui_Deprotonated Partial_Charge_Deprotonated Electrophile_LUMO_Deprotonated Nucleophile_HOMO_Deprotonated   --residue-types CYS SER HIS THR LYS   --output-dir ./feature_analysis_output2/
 """
 
 from __future__ import annotations
@@ -411,7 +413,76 @@ def apply_raw_threshold_reporting(
 
     spec = thr_result.get("specificity_at_operating_threshold", float("nan"))
     thr_result["degenerate_filter"] = is_degenerate_filter(spec, min_specificity)
+    apply_scenario2_diagnostic_raw_thresholds(thr_result, higher_is_positive)
     return thr_result
+
+
+def enrichment_ratio(n: int, N: int, k: int, K: int) -> float:
+    """Observed / expected target rate in passing set: (k/K) / (n/N)."""
+    if K == 0 or n == 0 or N == 0:
+        return float("nan")
+    return (k / K) / (n / N)
+
+
+def hypergeom_enrichment_at_oriented_threshold(
+    y_true: np.ndarray,
+    oriented: np.ndarray,
+    thr: float,
+) -> tuple[int, int, float, float]:
+    """Return (k, K, enrichment_ratio, hypergeom_pval) for oriented >= thr."""
+    N = len(y_true)
+    n = int(y_true.sum())
+    K = int((oriented >= thr).sum())
+    k = int((y_true & (oriented >= thr)).sum())
+    if K == 0 or n == 0 or N == 0:
+        return k, K, float("nan"), float("nan")
+    pval = float(hypergeom.sf(k - 1, N, n, K))
+    return k, K, enrichment_ratio(n, N, k, K), pval
+
+
+def scenario2_diagnostic_defaults() -> dict:
+    return {
+        "enrichment_ratio_at_operating_threshold": float("nan"),
+        "n_passing_at_operating_threshold": float("nan"),
+        "n_targets_in_passing_at_operating_threshold": float("nan"),
+        "scenario2_best_hypergeom_pval": float("nan"),
+        "scenario2_best_recall_at_p_lt_0_05": float("nan"),
+        "scenario2_best_recall_at_p_lt_0_05_threshold": float("nan"),
+        "scenario2_best_recall_at_p_lt_0_05_threshold_oriented": float("nan"),
+        "scenario2_hypergeom_pval_at_best_recall": float("nan"),
+        "n_passing_at_best_recall_p_lt_0_05": float("nan"),
+        "n_targets_in_passing_at_best_recall_p_lt_0_05": float("nan"),
+        "enrichment_ratio_at_best_recall_p_lt_0_05": float("nan"),
+    }
+
+
+SCENARIO2_DIAGNOSTIC_KEYS = tuple(scenario2_diagnostic_defaults().keys())
+
+
+def apply_scenario2_diagnostic_raw_thresholds(
+    thr_result: dict,
+    higher_is_positive: bool,
+) -> None:
+    """Convert oriented diagnostic thresholds to raw feature scale."""
+    ori = thr_result.get("scenario2_best_recall_at_p_lt_0_05_threshold_oriented")
+    if ori is not None and not (isinstance(ori, float) and np.isnan(ori)):
+        thr_result["scenario2_best_recall_at_p_lt_0_05_threshold"] = oriented_threshold_to_raw(
+            float(ori), higher_is_positive
+        )
+
+
+def attach_operating_enrichment_fields(
+    result: dict,
+    n: int,
+    N: int,
+    k: int,
+    K: int,
+    pval: float,
+) -> None:
+    result["n_passing_at_operating_threshold"] = K
+    result["n_targets_in_passing_at_operating_threshold"] = k
+    result["enrichment_ratio_at_operating_threshold"] = enrichment_ratio(n, N, k, K)
+    result["hypergeom_pval_at_operating_threshold"] = pval
 
 
 def apply_threshold_fields_to_row(row: dict, thr_result: dict) -> None:
@@ -422,6 +493,7 @@ def apply_threshold_fields_to_row(row: dict, thr_result: dict) -> None:
         "recall1_threshold", "recall1_threshold_oriented", "specificity_at_recall1",
         "hypergeom_pval_at_operating_threshold",
         "filter_direction", "higher_is_positive", "degenerate_filter",
+        *SCENARIO2_DIAGNOSTIC_KEYS,
     ):
         if key in thr_result:
             row[key] = thr_result[key]
@@ -462,6 +534,7 @@ def scenario1_roc_threshold(
         "hypergeom_pval_at_operating_threshold": float("nan"),
         "scenario": 1,
         "passed": False,
+        **scenario2_diagnostic_defaults(),
     }
 
     if len(np.unique(y_true)) < 2 or y_true.sum() == 0:
@@ -485,6 +558,8 @@ def scenario1_roc_threshold(
             "specificity_at_operating_threshold": spec,
             "passed": recall >= min_recall,
         })
+        k, K, enrich, pval = hypergeom_enrichment_at_oriented_threshold(y_true, oriented, op_thr)
+        attach_operating_enrichment_fields(result, int(y_true.sum()), len(y_true), k, K, pval)
 
     # recall=1.0 threshold: lowest oriented threshold retaining all positives
     pos_vals = oriented[y_true == 1]
@@ -502,8 +577,14 @@ def scenario2_hypergeom_threshold(
     scores: np.ndarray,
     higher_is_positive: bool,
     min_recall: float,
+    hypergeom_alpha: float = 0.05,
 ) -> dict:
-    """Sweep percentile thresholds; hypergeometric test for enrichment."""
+    """Sweep percentile thresholds; hypergeometric test for enrichment.
+
+    Operating threshold: among points with p < alpha and recall >= min_recall,
+    pick the one with highest specificity (higher threshold on ties).
+    Diagnostic fields still report max-recall among all p < alpha points.
+    """
     oriented = orient_scores(scores, higher_is_positive)
     result = {
         "operating_threshold": float("nan"),
@@ -514,6 +595,7 @@ def scenario2_hypergeom_threshold(
         "hypergeom_pval_at_operating_threshold": float("nan"),
         "scenario": 2,
         "passed": False,
+        **scenario2_diagnostic_defaults(),
     }
 
     N = len(y_true)
@@ -521,7 +603,10 @@ def scenario2_hypergeom_threshold(
     if n == 0 or N == 0:
         return result
 
-    best = None
+    best_qualifying = None
+    best_pval_point = None
+    best_recall_significant = None
+
     for pct in range(5, 96, 5):
         thr = float(np.percentile(oriented, pct))
         K = int((oriented >= thr).sum())
@@ -530,21 +615,61 @@ def scenario2_hypergeom_threshold(
             continue
         pval = float(hypergeom.sf(k - 1, N, n, K))
         recall = k / n
-        if pval < 0.05 and recall >= min_recall:
-            if best is None or recall > best["recall"] or (
-                recall == best["recall"] and thr > best["threshold"]
-            ):
-                best = {"threshold": thr, "recall": recall, "pval": pval, "K": K, "k": k}
+        _, spec = metrics_at_threshold(y_true, scores, thr, higher_is_positive)
+        enrich = enrichment_ratio(n, N, k, K)
+        point = {
+            "threshold": thr,
+            "recall": recall,
+            "specificity": spec,
+            "pval": pval,
+            "K": K,
+            "k": k,
+            "enrichment": enrich,
+        }
 
-    if best is not None:
-        recall, spec = metrics_at_threshold(y_true, scores, best["threshold"], higher_is_positive)
+        if best_pval_point is None or pval < best_pval_point["pval"]:
+            best_pval_point = point
+
+        if pval < hypergeom_alpha:
+            if best_recall_significant is None or recall > best_recall_significant["recall"] or (
+                recall == best_recall_significant["recall"]
+                and thr > best_recall_significant["threshold"]
+            ):
+                best_recall_significant = point
+
+        if pval < hypergeom_alpha and recall >= min_recall:
+            if best_qualifying is None or spec > best_qualifying["specificity"] or (
+                spec == best_qualifying["specificity"] and thr > best_qualifying["threshold"]
+            ):
+                best_qualifying = point
+
+    if best_pval_point is not None:
+        result["scenario2_best_hypergeom_pval"] = best_pval_point["pval"]
+
+    if best_recall_significant is not None:
         result.update({
-            "operating_threshold": best["threshold"],
+            "scenario2_best_recall_at_p_lt_0_05": best_recall_significant["recall"],
+            "scenario2_best_recall_at_p_lt_0_05_threshold_oriented": best_recall_significant["threshold"],
+            "scenario2_hypergeom_pval_at_best_recall": best_recall_significant["pval"],
+            "n_passing_at_best_recall_p_lt_0_05": best_recall_significant["K"],
+            "n_targets_in_passing_at_best_recall_p_lt_0_05": best_recall_significant["k"],
+            "enrichment_ratio_at_best_recall_p_lt_0_05": best_recall_significant["enrichment"],
+        })
+
+    if best_qualifying is not None:
+        recall, spec = metrics_at_threshold(
+            y_true, scores, best_qualifying["threshold"], higher_is_positive
+        )
+        result.update({
+            "operating_threshold": best_qualifying["threshold"],
             "recall_at_operating_threshold": recall,
             "specificity_at_operating_threshold": spec,
-            "hypergeom_pval_at_operating_threshold": best["pval"],
             "passed": True,
         })
+        attach_operating_enrichment_fields(
+            result, n, N,
+            best_qualifying["k"], best_qualifying["K"], best_qualifying["pval"],
+        )
 
     pos_vals = oriented[y_true == 1]
     if len(pos_vals) > 0:
@@ -608,6 +733,7 @@ def analyze_feature_in_fold(
         "higher_is_positive": True,
         "degenerate_filter": False,
         "role": "rank_input",
+        **scenario2_diagnostic_defaults(),
     }
 
     # AUC/MW on training fold
@@ -679,6 +805,20 @@ def analyze_feature_in_fold(
     return row
 
 
+def _mean_numeric_column(df: pd.DataFrame, column: str) -> float:
+    if column not in df.columns:
+        return float("nan")
+    values = pd.to_numeric(df[column], errors="coerce").dropna()
+    return float(values.mean()) if len(values) else float("nan")
+
+
+def _scenario2_summary_means(eval_df: pd.DataFrame) -> dict:
+    return {
+        f"{key}_mean": _mean_numeric_column(eval_df, key)
+        for key in SCENARIO2_DIAGNOSTIC_KEYS
+    }
+
+
 def _summarize_folds_common(
     fold_results: pd.DataFrame,
     valid_fold_mask: pd.Series | None,
@@ -730,10 +870,8 @@ def _summarize_folds_common(
     scenario_vals = passing["scenario"].replace("failed", np.nan).dropna()
     scenario_majority = int(scenario_vals.mode().iloc[0]) if len(scenario_vals) > 0 else float("nan")
 
-    if pass_rate >= args.pass_rate and not np.isnan(threshold_cv) and threshold_cv <= args.threshold_cv:
+    if pass_rate >= args.pass_rate:
         role = "hard_filter" if scenario_majority == 1 else "permissive_filter"
-    elif pass_rate >= args.pass_rate:
-        role = "rank_input"
     else:
         role = "rank_input"
 
@@ -764,6 +902,7 @@ def _summarize_folds_common(
         "role": role,
         "n_folds_passed": len(passing),
         "n_valid_folds": n_valid,
+        **_scenario2_summary_means(eval_df),
     }
 
 
@@ -779,15 +918,14 @@ def summarize_feature_across_folds(
     threshold_cv = stats["threshold_cv"]
     scenario_majority = stats["scenario_majority"]
     role_final = stats["role"]
+    thr_cv_str = f"{threshold_cv:.3f}" if pd.notna(threshold_cv) else "NA"
 
-    if pass_rate >= args.pass_rate and not np.isnan(threshold_cv) and threshold_cv <= args.threshold_cv:
+    if pass_rate >= args.pass_rate:
         reason = (
             f"pass_rate={pass_rate:.2f}>={args.pass_rate}, "
-            f"threshold_cv={threshold_cv:.3f}<={args.threshold_cv}, "
+            f"threshold_cv={thr_cv_str} (reference<={args.threshold_cv}), "
             f"majority scenario={scenario_majority}"
         )
-    elif pass_rate >= args.pass_rate:
-        reason = f"pass_rate={pass_rate:.2f} OK but threshold_cv={threshold_cv:.3f}>{args.threshold_cv} (unstable)"
     else:
         reason = f"pass_rate={pass_rate:.2f}<{args.pass_rate} (too many fold failures)"
 
@@ -835,6 +973,7 @@ def summarize_feature_across_folds(
         "recommended_operating_threshold": stats["threshold_mean"],
         "recall_at_operating_threshold_mean": stats["recall_at_operating_threshold_mean"],
         "specificity_at_operating_threshold_mean": stats["specificity_at_operating_threshold_mean"],
+        **{f"{key}_mean": stats.get(f"{key}_mean", float("nan")) for key in SCENARIO2_DIAGNOSTIC_KEYS},
     }
 
 
@@ -1281,6 +1420,10 @@ def _analyze_combo_residue_type_feature(
         "degenerate_filter": degenerate,
         "degenerate_fold_rate": stats.get("degenerate_fold_rate_residue", float("nan")),
         "scenario_majority": stats["scenario_majority_residue"],
+        **{
+            f"{key}_mean": stats.get(f"{key}_mean_residue", float("nan"))
+            for key in SCENARIO2_DIAGNOSTIC_KEYS
+        },
         "caveat": caveat,
     }
 
@@ -1360,6 +1503,19 @@ def _to_residue_type_level_summary_row(row: dict) -> dict:
         "degenerate_filter": row.get("degenerate_filter", False),
         "auc_mean": row.get("auc_mean", float("nan")),
         "pass_rate": row.get("pass_rate", float("nan")),
+        "threshold_cv": row.get("threshold_cv", float("nan")),
+        "enrichment_ratio_at_operating_threshold_mean": row.get(
+            "enrichment_ratio_at_operating_threshold_mean", float("nan")
+        ),
+        "scenario2_best_hypergeom_pval_mean": row.get(
+            "scenario2_best_hypergeom_pval_mean", float("nan")
+        ),
+        "scenario2_best_recall_at_p_lt_0_05_mean": row.get(
+            "scenario2_best_recall_at_p_lt_0_05_mean", float("nan")
+        ),
+        "enrichment_ratio_at_best_recall_p_lt_0_05_mean": row.get(
+            "enrichment_ratio_at_best_recall_p_lt_0_05_mean", float("nan")
+        ),
         "n_positives": row.get("n_positives", 0),
         "n_combos": row.get("n_combos", 0),
         "n_sites_total": row.get("n_sites_total", 0),
@@ -1484,6 +1640,7 @@ def analyze_residue_feature_in_fold(
         "higher_is_positive": True,
         "degenerate_filter": False,
         "role": "rank_input",
+        **scenario2_diagnostic_defaults(),
     }
 
     if row["n_train_targets"] < MIN_FOLD_TRAIN_POSITIVES:
@@ -1592,6 +1749,10 @@ def summarize_residue_across_folds(
         "role_residue": stats["role"],
         "n_valid_folds": stats["n_valid_folds"],
         "n_folds_passed_residue": stats["n_folds_passed"],
+        **{
+            f"{key}_mean_residue": stats.get(f"{key}_mean", float("nan"))
+            for key in SCENARIO2_DIAGNOSTIC_KEYS
+        },
     }
 
 
@@ -1945,10 +2106,12 @@ def _analyze_feature_residue_combo(
         "filter_direction_majority_residue": residue_stats.get("filter_direction_majority_residue", ""),
         "degenerate_filter_residue": degenerate_residue,
         "degenerate_fold_rate_residue": residue_stats.get("degenerate_fold_rate_residue", float("nan")),
+        **{
+            f"{key}_mean_residue": residue_stats.get(f"{key}_mean_residue", float("nan"))
+            for key in SCENARIO2_DIAGNOSTIC_KEYS
+        },
         "caveat": caveat,
     }
-
-    # Residue data export
     y_valid = y[valid_mask]
     s_valid = scores[valid_mask]
     auc_all, mw_all, es_all, _ = compute_discriminative_metrics(y_valid, s_valid)
@@ -2013,6 +2176,19 @@ def _to_per_residue_summary_row(recon_row: dict) -> dict:
         "degenerate_filter": recon_row.get("degenerate_filter_residue", False),
         "auc_mean": auc,
         "pass_rate": recon_row.get("pass_rate_residue", float("nan")),
+        "threshold_cv": recon_row.get("threshold_cv_residue", float("nan")),
+        "enrichment_ratio_at_operating_threshold_mean": recon_row.get(
+            "enrichment_ratio_at_operating_threshold_mean_residue", float("nan")
+        ),
+        "scenario2_best_hypergeom_pval_mean": recon_row.get(
+            "scenario2_best_hypergeom_pval_mean_residue", float("nan")
+        ),
+        "scenario2_best_recall_at_p_lt_0_05_mean": recon_row.get(
+            "scenario2_best_recall_at_p_lt_0_05_mean_residue", float("nan")
+        ),
+        "enrichment_ratio_at_best_recall_p_lt_0_05_mean": recon_row.get(
+            "enrichment_ratio_at_best_recall_p_lt_0_05_mean_residue", float("nan")
+        ),
         "sufficient_data": recon_row.get("sufficient_data", False),
         "caveat": recon_row.get("caveat", ""),
         "rescued_by_residue_analysis": recon_row.get("rescued_by_residue_analysis", False),
@@ -2333,7 +2509,8 @@ def main() -> None:
     parser.add_argument("--pass-rate", type=float, default=0.90,
                         help="Minimum fold pass rate for filter role (default: 0.90).")
     parser.add_argument("--threshold-cv", type=float, default=0.20,
-                        help="Maximum threshold CV for stable filter (default: 0.20).")
+                        help="Reference threshold CV for reporting only (default: 0.20). "
+                        "Does not affect filter role assignment.")
     parser.add_argument("--n-folds", type=int, default=10, help="CV folds (default: 10).")
     parser.add_argument("--random-seed", type=int, default=42, help="Random seed (default: 42).")
     parser.add_argument("--min-residue-positives", type=int, default=50,
