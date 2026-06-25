@@ -19,6 +19,9 @@ Usage:
         [--reward-mode hit_at_k | hit_at_top_pct] \\
         [--top-pct 10] \\
         [--export-results ./screen_label_results.csv] \\
+        [--export-warhead-accuracy ./screen_warhead_accuracy.csv] \\
+        [--export-residue-accuracy ./screen_residue_accuracy.csv] \\
+        [--export-shap ./screen_shap_per_candidate.csv] \\
         [--export-query-groups ./screen_query_group_results.csv] \\
         [--export-scores ./screen_scores.csv]
 """
@@ -38,12 +41,15 @@ from Training_Cov_Screen import (
     DEFAULT_RANK_BONUS_EPSILON,
     REWARD_MODES,
     VALID_RESIDUES,
+    _format_rank_when_hit,
+    _format_ss_when_hit,
     _normalize_resnum,
     evaluate_predictions,
     load_and_merge,
     summarize_eval_metrics,
     analyze_residue_composition,
     print_residue_composition,
+    export_shap_csvs,
 )
 
 
@@ -199,6 +205,22 @@ def summarize_screen_metrics(
         "ndcg": qg_stats["ndcg"],
         "avg_top_pct": qg_stats["avg_top_pct"],
         "avg_search_space_reduction": qg_stats["avg_search_space_reduction"],
+        "median_search_space_reduction": qg_stats["median_search_space_reduction"],
+        "avg_ss_reduction_when_hit_at_k": qg_stats["avg_ss_reduction_when_hit_at_k"],
+        "median_ss_reduction_when_hit_at_k": qg_stats["median_ss_reduction_when_hit_at_k"],
+        "avg_ss_reduction_when_hit_at_top_pct": qg_stats["avg_ss_reduction_when_hit_at_top_pct"],
+        "median_ss_reduction_when_hit_at_top_pct": qg_stats["median_ss_reduction_when_hit_at_top_pct"],
+        "avg_ss_reduction_when_hit": qg_stats["avg_ss_reduction_when_hit"],
+        "median_ss_reduction_when_hit": qg_stats["median_ss_reduction_when_hit"],
+        "avg_rank_when_hit_at_k": qg_stats["avg_rank_when_hit_at_k"],
+        "median_rank_when_hit_at_k": qg_stats["median_rank_when_hit_at_k"],
+        "n_hit_at_k": qg_stats["n_hit_at_k"],
+        "avg_rank_when_hit_at_top_pct": qg_stats["avg_rank_when_hit_at_top_pct"],
+        "median_rank_when_hit_at_top_pct": qg_stats["median_rank_when_hit_at_top_pct"],
+        "n_hit_at_top_pct": qg_stats["n_hit_at_top_pct"],
+        "avg_rank_when_hit": qg_stats["avg_rank_when_hit"],
+        "median_rank_when_hit": qg_stats["median_rank_when_hit"],
+        "hit_criterion": qg_stats["hit_criterion"],
     }
 
 
@@ -228,6 +250,159 @@ def per_residue_screen_breakdown(
         )
     )
     return label_agg.join(qg_agg, how="outer").reset_index()
+
+
+def _subset_rank_ss_stats(subset: pd.DataFrame) -> dict[str, float]:
+    """Mean/median rank and search-space reduction for a query-group subset."""
+    if subset.empty:
+        return {
+            "avg_rank": float("nan"),
+            "median_rank": float("nan"),
+            "avg_ss_reduction": float("nan"),
+            "median_ss_reduction": float("nan"),
+        }
+    return {
+        "avg_rank": float(subset["target_rank"].mean()),
+        "median_rank": float(subset["target_rank"].median()),
+        "avg_ss_reduction": float(subset["search_space_reduction"].mean()),
+        "median_ss_reduction": float(subset["search_space_reduction"].median()),
+    }
+
+
+def _warhead_hit_split_row(grp: pd.DataFrame, hit_col: str) -> dict[str, float | int | str]:
+    """Per-warhead metrics with overall / hit / miss splits for one hit criterion."""
+    hits = grp.loc[grp[hit_col] == 1]
+    misses = grp.loc[grp[hit_col] == 0]
+    overall = _subset_rank_ss_stats(grp)
+    hit_stats = _subset_rank_ss_stats(hits)
+    miss_stats = _subset_rank_ss_stats(misses)
+    prefix = "top_pct" if hit_col == "hit_at_top_pct" else "k"
+    return {
+        f"hit_rate_{prefix}": float(grp[hit_col].mean()),
+        f"n_hit_{prefix}": int(len(hits)),
+        f"n_miss_{prefix}": int(len(misses)),
+        f"avg_rank_{prefix}": overall["avg_rank"],
+        f"median_rank_{prefix}": overall["median_rank"],
+        f"avg_rank_hit_{prefix}": hit_stats["avg_rank"],
+        f"median_rank_hit_{prefix}": hit_stats["median_rank"],
+        f"avg_rank_miss_{prefix}": miss_stats["avg_rank"],
+        f"median_rank_miss_{prefix}": miss_stats["median_rank"],
+        f"avg_ss_reduction_{prefix}": overall["avg_ss_reduction"],
+        f"median_ss_reduction_{prefix}": overall["median_ss_reduction"],
+        f"avg_ss_reduction_hit_{prefix}": hit_stats["avg_ss_reduction"],
+        f"median_ss_reduction_hit_{prefix}": hit_stats["median_ss_reduction"],
+        f"avg_ss_reduction_miss_{prefix}": miss_stats["avg_ss_reduction"],
+        f"median_ss_reduction_miss_{prefix}": miss_stats["median_ss_reduction"],
+    }
+
+
+def per_warhead_screen_breakdown(
+    eval_qg_df: pd.DataFrame,
+    reward_mode: str,
+) -> pd.DataFrame:
+    """
+    Per training warhead accuracy from matched (Name × Warhead) query groups.
+
+    Each row is one warhead type seen in label-matched screening. Metrics include
+    hit rate at K and at top-%, plus avg/median rank and search-space reduction
+    overall and split by hit vs miss for each criterion.
+    """
+    if eval_qg_df.empty or "Warhead" not in eval_qg_df.columns:
+        return pd.DataFrame()
+
+    active_hit_col = (
+        "hit_at_top_pct" if reward_mode == "hit_at_top_pct" else "hit_at_k"
+    )
+    active_prefix = "top_pct" if active_hit_col == "hit_at_top_pct" else "k"
+
+    rows: list[dict] = []
+    for warhead, grp in eval_qg_df.groupby("Warhead", sort=True):
+        row: dict[str, object] = {
+            "Warhead": warhead,
+            "n_query_groups": int(len(grp)),
+            "hit_criterion_headline": active_hit_col,
+        }
+        row.update(_warhead_hit_split_row(grp, "hit_at_k"))
+        row.update(_warhead_hit_split_row(grp, "hit_at_top_pct"))
+        active_hits = grp.loc[grp[active_hit_col] == 1]
+        active_misses = grp.loc[grp[active_hit_col] == 0]
+        row["avg_rank_when_hit"] = _subset_rank_ss_stats(active_hits)["avg_rank"]
+        row["median_rank_when_hit"] = _subset_rank_ss_stats(active_hits)["median_rank"]
+        row["avg_rank_when_miss"] = _subset_rank_ss_stats(active_misses)["avg_rank"]
+        row["median_rank_when_miss"] = _subset_rank_ss_stats(active_misses)["median_rank"]
+        row["avg_ss_reduction_when_hit"] = _subset_rank_ss_stats(active_hits)["avg_ss_reduction"]
+        row["median_ss_reduction_when_hit"] = _subset_rank_ss_stats(active_hits)["median_ss_reduction"]
+        row["avg_ss_reduction_when_miss"] = _subset_rank_ss_stats(active_misses)["avg_ss_reduction"]
+        row["median_ss_reduction_when_miss"] = _subset_rank_ss_stats(active_misses)["median_ss_reduction"]
+        rows.append(row)
+
+    out = pd.DataFrame(rows)
+    out = out.sort_values(
+        [f"hit_rate_{active_prefix}", "n_query_groups"],
+        ascending=[False, False],
+    ).reset_index(drop=True)
+    return out
+
+
+def per_residue_accuracy_breakdown(
+    eval_qg_df: pd.DataFrame,
+    eval_label_df: pd.DataFrame,
+    reward_mode: str,
+) -> pd.DataFrame:
+    """
+    Per target residue type (CYS, SER, ...) from query-group metrics only.
+
+    Each value is mean/median across (Name × Warhead) query groups for that
+    residue type — never pooled over individual candidate residues.
+    """
+    if eval_qg_df.empty or "target_residue_type" not in eval_qg_df.columns:
+        return pd.DataFrame()
+
+    active_hit_col = (
+        "hit_at_top_pct" if reward_mode == "hit_at_top_pct" else "hit_at_k"
+    )
+
+    rows: list[dict] = []
+    for res_type, grp in eval_qg_df.groupby("target_residue_type", sort=True):
+        overall = _subset_rank_ss_stats(grp)
+        hits = grp.loc[grp[active_hit_col] == 1]
+        misses = grp.loc[grp[active_hit_col] == 0]
+        hit_stats = _subset_rank_ss_stats(hits)
+        miss_stats = _subset_rank_ss_stats(misses)
+        rows.append({
+            "target_residue_type": res_type,
+            "n_query_groups": int(len(grp)),
+            "hit_criterion_headline": active_hit_col,
+            "hit_rate_at_k": float(grp["hit_at_k"].mean()),
+            "hit_rate_at_top_pct": float(grp["hit_at_top_pct"].mean()),
+            "avg_rank": overall["avg_rank"],
+            "median_rank": overall["median_rank"],
+            "avg_rank_when_hit": hit_stats["avg_rank"],
+            "avg_ss_reduction": overall["avg_ss_reduction"],
+            "median_ss_reduction": overall["median_ss_reduction"],
+            "avg_ss_reduction_when_hit": hit_stats["avg_ss_reduction"],
+            "median_ss_reduction_when_hit": hit_stats["median_ss_reduction"],
+            "avg_ss_reduction_when_miss": miss_stats["avg_ss_reduction"],
+            "median_ss_reduction_when_miss": miss_stats["median_ss_reduction"],
+        })
+
+    out = pd.DataFrame(rows)
+    if not eval_label_df.empty and "target_residue_type" in eval_label_df.columns:
+        label_agg = (
+            eval_label_df.groupby("target_residue_type", sort=True)
+            .agg(
+                n_labels=("hit_at_k", "count"),
+                label_hit_rate_at_k=("hit_at_k", "mean"),
+                label_hit_rate_at_top_pct=("hit_at_top_pct", "mean"),
+            )
+            .reset_index()
+        )
+        out = out.merge(label_agg, on="target_residue_type", how="left")
+
+    sort_col = (
+        "hit_rate_at_top_pct" if reward_mode == "hit_at_top_pct" else "hit_rate_at_k"
+    )
+    return out.sort_values(sort_col, ascending=False).reset_index(drop=True)
 
 
 def print_cov_screen_results(
@@ -262,9 +437,58 @@ def print_cov_screen_results(
     print(f"    NDCG@{k}             : {summary['ndcg']:.3f}")
     print(f"    Average rank         : {summary['avg_rank']:.1f}")
     print(f"    Median rank          : {summary['median_rank']:.1f}")
+    print(_format_rank_when_hit(
+        summary, f"Hit@{k}",
+        "avg_rank_when_hit_at_k", "median_rank_when_hit_at_k", "n_hit_at_k",
+        summary["n_query_groups"],
+    ))
+    print(_format_rank_when_hit(
+        summary,
+        f"Hit@{pct_label}",
+        "avg_rank_when_hit_at_top_pct",
+        "median_rank_when_hit_at_top_pct",
+        "n_hit_at_top_pct",
+        summary["n_query_groups"],
+    ))
     print(f"    Avg top-%ile         : {summary['avg_top_pct']:.1f}")
     print(f"    Avg SS reduction     : "
           f"{100.0 * summary['avg_search_space_reduction']:.1f}%")
+    print(f"    Median SS reduction  : "
+          f"{100.0 * summary['median_search_space_reduction']:.1f}%")
+    print(_format_ss_when_hit(
+        summary, f"Hit@{k}",
+        "avg_ss_reduction_when_hit_at_k",
+        "median_ss_reduction_when_hit_at_k",
+        "n_hit_at_k",
+        summary["n_query_groups"],
+    ))
+    print(_format_ss_when_hit(
+        summary,
+        f"Hit@{pct_label}",
+        "avg_ss_reduction_when_hit_at_top_pct",
+        "median_ss_reduction_when_hit_at_top_pct",
+        "n_hit_at_top_pct",
+        summary["n_query_groups"],
+    ))
+    headline = (
+        f"Hit@{pct_label}" if reward_mode == "hit_at_top_pct" else f"Hit@{k}"
+    )
+    print()
+    print(f"  Headline rank quality ({reward_mode}, {headline}):")
+    if pd.isna(summary["avg_rank_when_hit"]):
+        print("    Avg rank when hit    : n/a")
+        print("    Median rank when hit : n/a")
+    else:
+        print(f"    Avg rank when hit    : {summary['avg_rank_when_hit']:.2f}")
+        print(f"    Median rank when hit : {summary['median_rank_when_hit']:.1f}")
+    if pd.isna(summary["avg_ss_reduction_when_hit"]):
+        print("    Avg SS red. when hit : n/a")
+        print("    Med SS red. when hit : n/a")
+    else:
+        print(f"    Avg SS red. when hit : "
+              f"{100.0 * summary['avg_ss_reduction_when_hit']:.1f}%")
+        print(f"    Med SS red. when hit : "
+              f"{100.0 * summary['median_ss_reduction_when_hit']:.1f}%")
 
     print(f"\n  Per Residue Type:")
     per_res = per_residue_screen_breakdown(eval_label_df, eval_qg_df)
@@ -398,6 +622,22 @@ def parse_args() -> argparse.Namespace:
                         "Default: any matched warhead hit counts.")
     p.add_argument("--export-results", default=None,
                    help="Write per-label metrics CSV (one row per label site)")
+    p.add_argument("--export-warhead-accuracy", default=None,
+                   help="Write per-warhead accuracy CSV (default: "
+                        "<export-results stem>_warhead_accuracy.csv when "
+                        "--export-results is set)")
+    p.add_argument("--export-residue-accuracy", default=None,
+                   help="Write per-residue-type accuracy CSV (default: "
+                        "<export-results stem>_residue_accuracy.csv when "
+                        "--export-results is set)")
+    p.add_argument("--export-shap", default=None,
+                   help="Write SHAP per-candidate CSV (default: "
+                        "<export-results stem>_shap_per_candidate.csv when "
+                        "--export-results is set; also writes *_shap_global.csv)")
+    p.add_argument("--no-shap", action="store_true",
+                   help="Disable SHAP export even when --export-results is set")
+    p.add_argument("--shap-max-rows", type=int, default=None,
+                   help="Optional cap on rows for SHAP (random subsample if exceeded)")
     p.add_argument("--export-query-groups", default=None,
                    help="Write per-(Name × Warhead) query-group metrics CSV")
     p.add_argument("--export-scores", default=None,
@@ -497,6 +737,36 @@ def main() -> None:
     per_res = per_residue_screen_breakdown(eval_label_df, eval_qg_df).to_dict(
         orient="records"
     )
+    per_warhead_df = per_warhead_screen_breakdown(eval_qg_df, reward_mode)
+    per_residue_accuracy_df = per_residue_accuracy_breakdown(
+        eval_qg_df, eval_label_df, reward_mode,
+    )
+
+    shap_global_df = pd.DataFrame()
+    run_shap = not args.no_shap and (
+        args.export_shap is not None or args.export_results is not None
+    )
+    if run_shap:
+        prepared = prepare_inference_features(
+            merged, model_features,
+            normalize_within_protein=args.normalize_within_protein,
+        )
+        shap_per_path = args.export_shap
+        shap_global_path = None
+        if shap_per_path is None and args.export_results:
+            stem = Path(args.export_results).stem
+            parent = Path(args.export_results).parent
+            shap_per_path = str(parent / f"{stem}_shap_per_candidate.csv")
+            shap_global_path = str(parent / f"{stem}_shap_global.csv")
+        _, shap_global_df = export_shap_csvs(
+            model=model,
+            df=prepared,
+            feature_cols=model_features,
+            feature_matrix=prepared[model_features].values.astype(np.float32),
+            per_candidate_path=shap_per_path,
+            global_path=shap_global_path,
+            max_rows=args.shap_max_rows,
+        )
 
     summary = {
         "model": str(Path(args.model).resolve()),
@@ -511,7 +781,11 @@ def main() -> None:
         "n_labels": int(len(eval_label_df)),
         "overall": overall,
         "per_residue": per_res,
+        "per_residue_accuracy": per_residue_accuracy_df.to_dict(orient="records"),
+        "per_warhead": per_warhead_df.to_dict(orient="records"),
     }
+    if not shap_global_df.empty:
+        summary["shap_global"] = shap_global_df.to_dict(orient="records")
     if composition.get("n_query_groups"):
         summary["residue_composition"] = {
             k_: v for k_, v in composition.items() if k_ != "detail"
@@ -520,6 +794,30 @@ def main() -> None:
     if args.export_results:
         eval_label_df.to_csv(args.export_results, index=False)
         print(f"[INFO] Per-label metrics exported → {args.export_results}")
+
+    warhead_path = args.export_warhead_accuracy
+    if warhead_path is None and args.export_results:
+        warhead_path = str(Path(args.export_results).with_name(
+            Path(args.export_results).stem + "_warhead_accuracy.csv"
+        ))
+    if warhead_path:
+        if per_warhead_df.empty:
+            print("[WARN] No warhead breakdown to export.")
+        else:
+            per_warhead_df.to_csv(warhead_path, index=False)
+            print(f"[INFO] Per-warhead accuracy exported → {warhead_path}")
+
+    residue_path = args.export_residue_accuracy
+    if residue_path is None and args.export_results:
+        residue_path = str(Path(args.export_results).with_name(
+            Path(args.export_results).stem + "_residue_accuracy.csv"
+        ))
+    if residue_path:
+        if per_residue_accuracy_df.empty:
+            print("[WARN] No residue accuracy breakdown to export.")
+        else:
+            per_residue_accuracy_df.to_csv(residue_path, index=False)
+            print(f"[INFO] Per-residue accuracy exported → {residue_path}")
 
     if args.export_query_groups:
         eval_qg_df.to_csv(args.export_query_groups, index=False)

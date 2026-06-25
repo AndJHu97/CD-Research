@@ -8,6 +8,16 @@ Usage:
     python lgbm_ranker.py --training training.csv --labels labels.csv \
         --features Abs_Side_SASA deprotonation_prob Reactivity_Score \
         --topk 10 --pdb_folder ./pdbs
+
+    # Train without residue type one-hot inputs (res_CYS, res_SER, ...):
+    python Training_Cov_Screen.py --training training.csv --labels labels.csv \
+        --no-residue-type
+
+CV and test-set CSVs written to --output_dir:
+    cv_fold_results.csv  (per-fold train-split CV metrics + mean row)
+    test_label_results.csv, test_query_groups.csv,
+    test_warhead_accuracy.csv, test_residue_accuracy.csv,
+    test_shap_per_candidate.csv, test_shap_global.csv
 """
 
 import os
@@ -36,6 +46,7 @@ warnings.filterwarnings("ignore")
 # ─────────────────────────────────────────────
 
 VALID_RESIDUES = {"CYS", "HIS", "SER", "TYR", "THR", "LYS"}
+NUCLEOPHILE_RESIDUES = ("CYS", "HIS", "SER", "THR", "TYR", "LYS")
 
 # WHy this? to boost the imablance residue where?
 RARITY_BOOST = {
@@ -565,9 +576,10 @@ def build_features(merged: pd.DataFrame,
                    feature_cols: list[str],
                    residue_specific_cols: list[str],
                    normalize_within_protein: bool = False,
-                   resnum_equals: list[int] | None = None) -> pd.DataFrame:
+                   resnum_equals: list[int] | None = None,
+                   include_residue_type: bool = True) -> pd.DataFrame:
     """
-    - One-hot encode Residue type
+    - Optionally one-hot encode Residue type (res_CYS, res_SER, ...)
     - Optionally add binary resnum_eq_N features (--res-num)
     - Optionally normalize specified features within protein
     - Residue-specific features: same value for all residues of same type
@@ -577,9 +589,14 @@ def build_features(merged: pd.DataFrame,
 
     df = merged.copy()
 
-    # One-hot encode residue type
-    for res in VALID_RESIDUES:
-        df[f"res_{res}"] = (df["Residue"] == res).astype(int)
+    ohe_cols: list[str] = []
+    if include_residue_type:
+        for res in VALID_RESIDUES:
+            df[f"res_{res}"] = (df["Residue"] == res).astype(int)
+        ohe_cols = [f"res_{r}" for r in VALID_RESIDUES]
+        print(f"  Residue type one-hot: {ohe_cols}")
+    else:
+        print("  Residue type one-hot: disabled")
 
     resnum_cols: list[str] = []
     if resnum_equals:
@@ -607,7 +624,6 @@ def build_features(merged: pd.DataFrame,
             print(f"  WARNING: residue-specific feature '{col}' not in data, skipping.")
 
     # Final feature list
-    ohe_cols  = [f"res_{r}" for r in VALID_RESIDUES]
     norm_cols = ([f"{c}_norm" for c in feature_cols
                   if f"{c}_norm" in df.columns]
                  if normalize_within_protein else [])
@@ -753,6 +769,34 @@ def evaluate_predictions(
     return pd.DataFrame(results)
 
 
+def _metric_stats_when_hit(
+    eval_df: pd.DataFrame,
+    hit_col: str,
+    value_col: str,
+) -> dict[str, float | int]:
+    """Mean/median of *value_col* among rows where *hit_col* is true."""
+    if eval_df.empty or hit_col not in eval_df.columns or value_col not in eval_df.columns:
+        return {"avg": float("nan"), "median": float("nan"), "n": 0}
+    hits = eval_df.loc[eval_df[hit_col] == 1, value_col]
+    if hits.empty:
+        return {"avg": float("nan"), "median": float("nan"), "n": 0}
+    return {
+        "avg": float(hits.mean()),
+        "median": float(hits.median()),
+        "n": int(len(hits)),
+    }
+
+
+def _rank_stats_when_hit(eval_df: pd.DataFrame, hit_col: str) -> dict[str, float | int]:
+    """Mean/median target rank among rows where *hit_col* is true."""
+    return _metric_stats_when_hit(eval_df, hit_col, "target_rank")
+
+
+def _ss_stats_when_hit(eval_df: pd.DataFrame, hit_col: str) -> dict[str, float | int]:
+    """Mean/median search-space reduction among rows where *hit_col* is true."""
+    return _metric_stats_when_hit(eval_df, hit_col, "search_space_reduction")
+
+
 def summarize_eval_metrics(
     eval_df: pd.DataFrame,
     k: int,
@@ -771,7 +815,37 @@ def summarize_eval_metrics(
             "objective": 0.0,
             "avg_top_pct": float("nan"),
             "avg_search_space_reduction": float("nan"),
+            "median_search_space_reduction": float("nan"),
+            "avg_ss_reduction_when_hit_at_k": float("nan"),
+            "median_ss_reduction_when_hit_at_k": float("nan"),
+            "avg_ss_reduction_when_hit_at_top_pct": float("nan"),
+            "median_ss_reduction_when_hit_at_top_pct": float("nan"),
+            "avg_ss_reduction_when_hit": float("nan"),
+            "median_ss_reduction_when_hit": float("nan"),
+            "avg_rank_when_hit_at_k": float("nan"),
+            "median_rank_when_hit_at_k": float("nan"),
+            "n_hit_at_k": 0,
+            "avg_rank_when_hit_at_top_pct": float("nan"),
+            "median_rank_when_hit_at_top_pct": float("nan"),
+            "n_hit_at_top_pct": 0,
+            "avg_rank_when_hit": float("nan"),
+            "median_rank_when_hit": float("nan"),
         }
+
+    hit_k_stats = _rank_stats_when_hit(eval_df, "hit_at_k")
+    hit_pct_stats = _rank_stats_when_hit(eval_df, "hit_at_top_pct")
+    ss_hit_k_stats = _ss_stats_when_hit(eval_df, "hit_at_k")
+    ss_hit_pct_stats = _ss_stats_when_hit(eval_df, "hit_at_top_pct")
+    active_hit_col = (
+        "hit_at_top_pct" if reward_mode == "hit_at_top_pct" else "hit_at_k"
+    )
+    active_stats = (
+        hit_pct_stats if reward_mode == "hit_at_top_pct" else hit_k_stats
+    )
+    active_ss_stats = (
+        ss_hit_pct_stats if reward_mode == "hit_at_top_pct" else ss_hit_k_stats
+    )
+
     return {
         "hit_rate": float(eval_df["hit_at_k"].mean()),
         "hit_at_top_pct": float(eval_df["hit_at_top_pct"].mean()),
@@ -781,11 +855,40 @@ def summarize_eval_metrics(
         "objective": float(eval_df["objective"].mean()),
         "avg_top_pct": float(eval_df["top_pct"].mean()),
         "avg_search_space_reduction": float(eval_df["search_space_reduction"].mean()),
+        "median_search_space_reduction": float(eval_df["search_space_reduction"].median()),
+        "avg_ss_reduction_when_hit_at_k": ss_hit_k_stats["avg"],
+        "median_ss_reduction_when_hit_at_k": ss_hit_k_stats["median"],
+        "avg_ss_reduction_when_hit_at_top_pct": ss_hit_pct_stats["avg"],
+        "median_ss_reduction_when_hit_at_top_pct": ss_hit_pct_stats["median"],
+        "avg_ss_reduction_when_hit": active_ss_stats["avg"],
+        "median_ss_reduction_when_hit": active_ss_stats["median"],
+        "avg_rank_when_hit_at_k": hit_k_stats["avg"],
+        "median_rank_when_hit_at_k": hit_k_stats["median"],
+        "n_hit_at_k": hit_k_stats["n"],
+        "avg_rank_when_hit_at_top_pct": hit_pct_stats["avg"],
+        "median_rank_when_hit_at_top_pct": hit_pct_stats["median"],
+        "n_hit_at_top_pct": hit_pct_stats["n"],
+        "avg_rank_when_hit": active_stats["avg"],
+        "median_rank_when_hit": active_stats["median"],
+        "hit_criterion": active_hit_col,
         "reward_mode": reward_mode,
         "top_pct_threshold": top_pct_threshold,
         "k": k,
         "epsilon": epsilon,
     }
+
+
+def nucleophile_counts_for_series(residues: pd.Series) -> dict[str, int]:
+    """Count each nucleophilic residue type in a candidate pool."""
+    counts = residues.astype(str).str.strip().str.upper().value_counts()
+    return {res: int(counts.get(res, 0)) for res in NUCLEOPHILE_RESIDUES}
+
+
+def aggregate_nucleophile_totals(df: pd.DataFrame) -> dict[str, int]:
+    """Sum nucleophile-type counts across all rows (e.g. full split before filtering)."""
+    if df.empty or "Residue" not in df.columns:
+        return {res: 0 for res in NUCLEOPHILE_RESIDUES}
+    return nucleophile_counts_for_series(df["Residue"])
 
 
 def analyze_residue_composition(
@@ -804,11 +907,14 @@ def analyze_residue_composition(
       - rank1_given_label: per label type, distribution of rank-1 predictions
       - top_k_mean_type_fraction: mean share of each type in absolute top-K
       - top_pct_mean_type_fraction: mean share in top-X% pool
+      - n_CYS, n_HIS, ...: nucleophile counts in full pool before top-K / top-% slicing
+      - pool_residue_totals_before_filter: summed n_* across evaluated query groups
     """
     rows: list[dict] = []
     valid = sorted(VALID_RESIDUES)
 
     for qg, grp in scored_df.groupby("query_group"):
+        pool_counts = nucleophile_counts_for_series(grp["Residue"])
         g = grp.sort_values(score_col, ascending=False).reset_index(drop=True)
         tgt = g[g["relevance"] == 1]
         if tgt.empty:
@@ -833,6 +939,8 @@ def analyze_residue_composition(
             "rank1_matches_label_type": int(rank1_type == label_type),
             "n_candidates": n,
         }
+        for res in NUCLEOPHILE_RESIDUES:
+            row[f"n_{res}"] = pool_counts[res]
         for res in valid:
             row[f"top{k}_frac_{res}"] = float(k_counts.get(res, 0) / k_eff)
             row[f"top_pct_frac_{res}"] = float(pct_counts.get(res, 0) / pct_n)
@@ -866,6 +974,12 @@ def analyze_residue_composition(
         if f"top_pct_frac_{res}" in detail.columns
     }
 
+    pool_totals = {
+        res: int(detail[f"n_{res}"].sum())
+        for res in NUCLEOPHILE_RESIDUES
+        if f"n_{res}" in detail.columns
+    }
+
     return {
         "n_query_groups": n_qg,
         "rank1_type_match_rate": float(detail["rank1_matches_label_type"].mean()),
@@ -874,6 +988,7 @@ def analyze_residue_composition(
         "rank1_given_label": rank1_given_label,
         f"top{k}_mean_type_fraction": top_k_fracs,
         f"top_pct_{top_pct_threshold:g}_mean_type_fraction": top_pct_fracs,
+        "pool_residue_totals_before_filter": pool_totals,
         "detail": detail,
     }
 
@@ -913,6 +1028,12 @@ def print_residue_composition(
         print(f"\n    Mean type fraction in top-{top_pct_threshold:g}% pool:")
         for res, frac in sorted(composition[pct_key].items(), key=lambda x: -x[1]):
             print(f"      {res:3s}  {frac:6.1%}")
+
+    pool_totals = composition.get("pool_residue_totals_before_filter")
+    if pool_totals:
+        print(f"\n    Nucleophile pool totals before filtering (test):")
+        for res in NUCLEOPHILE_RESIDUES:
+            print(f"      {res:3s}  {pool_totals.get(res, 0):>8,}")
 
     r1gl = composition.get("rank1_given_label", [])
     if r1gl:
@@ -961,10 +1082,11 @@ def train_with_crossval(
     top_pct_threshold: float = 10.0,
     reward_mode: str = "hit_at_k",
     epsilon: float = DEFAULT_RANK_BONUS_EPSILON,
-) -> tuple[lgb.LGBMRanker, dict]:
+) -> tuple[lgb.LGBMRanker, dict, pd.DataFrame]:
     """
     GroupKFold cross-validation on train set, grouped by cluster_id.
-    Returns best model (trained on all train data) and CV metrics.
+    Returns best model (trained on all train data), CV mean metrics, and
+    per-fold metrics as a DataFrame.
     """
     print(f"\n[5/7] Cross-validation ({n_folds} folds)...")
     print(f"  Reward mode           : {reward_mode}")
@@ -985,6 +1107,10 @@ def train_with_crossval(
 
     gkf = GroupKFold(n_splits=n_folds)
     fold_metrics = defaultdict(list)
+    fold_rows: list[dict] = []
+    _skip_fold_keys = {
+        "reward_mode", "top_pct_threshold", "k", "epsilon", "hit_criterion",
+    }
 
     for fold, (tr_idx, val_idx) in enumerate(gkf.split(X, y, groups=groups)):
         tr_df  = train_df.iloc[tr_idx].sort_values("query_group").reset_index(drop=True)
@@ -1024,14 +1150,22 @@ def train_with_crossval(
         )
 
         for key, val in fold_summary.items():
-            if key in ("reward_mode", "top_pct_threshold", "k", "epsilon"):
+            if key in _skip_fold_keys:
                 continue
             fold_metrics[key].append(val)
+
+        fold_row = {
+            k: v for k, v in fold_summary.items() if k not in _skip_fold_keys
+        }
+        fold_row["fold"] = fold + 1
+        fold_row["n_query_groups"] = len(eval_df)
+        fold_rows.append(fold_row)
 
         print(f"  Fold {fold+1}: Obj={fold_summary['objective']:.3f}  "
               f"Hit@{k}={fold_summary['hit_rate']:.3f}  "
               f"Hit@top-{top_pct_threshold:g}%="
               f"{fold_summary['hit_at_top_pct']:.3f}  "
+              f"rank|hit={fold_summary['avg_rank_when_hit']:.2f}  "
               f"bonus={fold_summary['rank_bonus']:.3f}  "
               f"NDCG@{k}={fold_summary['ndcg']:.3f}")
 
@@ -1045,6 +1179,7 @@ def train_with_crossval(
     print(f"\n  CV Mean → Obj={cv_summary['objective']:.3f}  "
           f"Hit@{k}={cv_summary['hit_rate']:.3f}  "
           f"Hit@top-{top_pct_threshold:g}%={cv_summary['hit_at_top_pct']:.3f}  "
+          f"rank|hit={cv_summary['avg_rank_when_hit']:.2f}  "
           f"bonus={cv_summary['rank_bonus']:.3f}  "
           f"NDCG@{k}={cv_summary['ndcg']:.3f}")
 
@@ -1057,12 +1192,75 @@ def train_with_crossval(
     final_model = lgb.LGBMRanker(**get_lgbm_params())
     final_model.fit(X_all, y_all, group=g_all, sample_weight=w_all)
 
-    return final_model, cv_summary
+    cv_folds_df = pd.DataFrame(fold_rows)
+    if not cv_folds_df.empty:
+        lead_cols = ["fold", "n_query_groups"]
+        other_cols = [c for c in cv_folds_df.columns if c not in lead_cols]
+        cv_folds_df = cv_folds_df[lead_cols + other_cols]
+
+    return final_model, cv_summary, cv_folds_df
 
 
 # ─────────────────────────────────────────────
 # OUTPUT & REPORTING
 # ─────────────────────────────────────────────
+
+def _cv_folds_to_export_df(
+    cv_folds_df: pd.DataFrame,
+    cv_summary: dict,
+) -> pd.DataFrame:
+    """Append a mean row to per-fold CV metrics for CSV export."""
+    mean_row: dict = {"fold": "mean"}
+    for col in cv_folds_df.columns:
+        if col == "fold":
+            continue
+        if col in cv_summary:
+            mean_row[col] = cv_summary[col]
+        elif pd.api.types.is_numeric_dtype(cv_folds_df[col]):
+            mean_row[col] = float(cv_folds_df[col].mean())
+    return pd.concat(
+        [cv_folds_df, pd.DataFrame([mean_row])],
+        ignore_index=True,
+    )
+
+def _format_ss_when_hit(
+    summary: dict,
+    hit_label: str,
+    avg_key: str,
+    median_key: str,
+    n_key: str,
+    n_total: int,
+) -> str:
+    avg = summary.get(avg_key, float("nan"))
+    median = summary.get(median_key, float("nan"))
+    n_hit = int(summary.get(n_key, 0) or 0)
+    if pd.isna(avg):
+        return f"    SS reduction | {hit_label:<12}: n/a (0/{n_total} hits)"
+    return (
+        f"    SS reduction | {hit_label:<12}: "
+        f"avg {100.0 * avg:.1f}%  (median {100.0 * median:.1f}%, "
+        f"{n_hit}/{n_total} hits)"
+    )
+
+
+def _format_rank_when_hit(
+    summary: dict,
+    hit_label: str,
+    avg_key: str,
+    median_key: str,
+    n_key: str,
+    n_total: int,
+) -> str:
+    avg = summary.get(avg_key, float("nan"))
+    median = summary.get(median_key, float("nan"))
+    n_hit = int(summary.get(n_key, 0) or 0)
+    if pd.isna(avg):
+        return f"    Avg rank | {hit_label:<12}: n/a (0/{n_total} hits)"
+    return (
+        f"    Avg rank | {hit_label:<12}: {avg:.2f}  "
+        f"(median {median:.1f}, {n_hit}/{n_total} hits)"
+    )
+
 
 def print_results(
     eval_df: pd.DataFrame,
@@ -1090,13 +1288,62 @@ def print_results(
     print(f"    NDCG@{k}             : {summary['ndcg']:.3f}")
     print(f"    Average rank         : {summary['avg_rank']:.1f}")
     print(f"    Median rank          : {eval_df['target_rank'].median():.1f}")
+    print(_format_rank_when_hit(
+        summary, f"Hit@{k}",
+        "avg_rank_when_hit_at_k", "median_rank_when_hit_at_k", "n_hit_at_k",
+        len(eval_df),
+    ))
     print()
     print(f"  Percent metrics ({pct_label}):")
     print(f"    Hit@{pct_label}      : {summary['hit_at_top_pct']:.3f}")
     print(f"    Avg top-%ile         : {summary['avg_top_pct']:.1f}")
     print(f"    Median top-%ile      : {eval_df['top_pct'].median():.1f}")
+    print(_format_rank_when_hit(
+        summary,
+        f"Hit@{pct_label}",
+        "avg_rank_when_hit_at_top_pct",
+        "median_rank_when_hit_at_top_pct",
+        "n_hit_at_top_pct",
+        len(eval_df),
+    ))
     print(f"    Avg SS reduction     : "
           f"{100.0 * summary['avg_search_space_reduction']:.1f}%")
+    print(f"    Median SS reduction  : "
+          f"{100.0 * summary['median_search_space_reduction']:.1f}%")
+    print(_format_ss_when_hit(
+        summary, f"Hit@{k}",
+        "avg_ss_reduction_when_hit_at_k",
+        "median_ss_reduction_when_hit_at_k",
+        "n_hit_at_k",
+        len(eval_df),
+    ))
+    print(_format_ss_when_hit(
+        summary,
+        f"Hit@{pct_label}",
+        "avg_ss_reduction_when_hit_at_top_pct",
+        "median_ss_reduction_when_hit_at_top_pct",
+        "n_hit_at_top_pct",
+        len(eval_df),
+    ))
+    headline = (
+        f"Hit@{pct_label}" if reward_mode == "hit_at_top_pct" else f"Hit@{k}"
+    )
+    print()
+    print(f"  Headline ({reward_mode}, {headline}):")
+    if pd.isna(summary["avg_rank_when_hit"]):
+        print("    Avg rank when hit    : n/a")
+        print("    Median rank when hit : n/a")
+    else:
+        print(f"    Avg rank when hit    : {summary['avg_rank_when_hit']:.2f}")
+        print(f"    Median rank when hit : {summary['median_rank_when_hit']:.1f}")
+    if pd.isna(summary["avg_ss_reduction_when_hit"]):
+        print("    Avg SS red. when hit : n/a")
+        print("    Med SS red. when hit : n/a")
+    else:
+        print(f"    Avg SS red. when hit : "
+              f"{100.0 * summary['avg_ss_reduction_when_hit']:.1f}%")
+        print(f"    Med SS red. when hit : "
+              f"{100.0 * summary['median_ss_reduction_when_hit']:.1f}%")
 
     print(f"\n  Per Residue Type:")
     per_res = (eval_df.groupby("target_residue_type")
@@ -1114,11 +1361,230 @@ def print_results(
     print(f"{'='*60}\n")
 
 
+def compute_candidate_ranks(
+    df: pd.DataFrame,
+    score_col: str = "pred_score",
+    group_col: str = "query_group",
+) -> pd.Series:
+    """Rank candidates within each query group (1 = highest pred_score)."""
+    if score_col not in df.columns:
+        raise ValueError(f"Column '{score_col}' required for candidate ranks.")
+    return (
+        df.groupby(group_col, sort=False)[score_col]
+        .rank(ascending=False, method="first")
+        .astype(int)
+    )
+
+
+def export_shap_csvs(
+    model,
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    *,
+    output_dir: str | None = None,
+    prefix: str = "test",
+    per_candidate_path: str | None = None,
+    global_path: str | None = None,
+    max_rows: int | None = None,
+    random_state: int = 42,
+    feature_matrix: np.ndarray | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Export TreeSHAP values per candidate row and global mean SHAP per feature.
+
+    Per-candidate CSV columns: identifiers, candidate_rank, pred_score, then for
+    each model input: {feature} and shap_{feature} (value + SHAP contribution).
+    Global CSV: mean_shap, mean_abs_shap, std_shap, plus LGBM gain importance
+    (distinct from SHAP — gain is tree split frequency, not attribution).
+    """
+    try:
+        import shap
+    except ImportError:
+        print("[WARN] shap not installed; skipping SHAP export. pip install shap")
+        return pd.DataFrame(), pd.DataFrame()
+
+    if df.empty:
+        print("[WARN] No rows for SHAP export.")
+        return pd.DataFrame(), pd.DataFrame()
+
+    missing = [c for c in feature_cols if c not in df.columns]
+    if feature_matrix is None and missing:
+        print(f"[WARN] SHAP skipped; missing feature columns: {missing[:5]}")
+        return pd.DataFrame(), pd.DataFrame()
+    if feature_matrix is not None and missing:
+        print(f"  Note: {len(missing)} model feature(s) taken from prepared matrix "
+              f"(not in df), e.g. {missing[:3]}")
+
+    work = df.copy()
+    row_positions: np.ndarray | None = None
+    if max_rows is not None and len(work) > max_rows:
+        print(f"[WARN] SHAP subsampled to {max_rows:,} rows (from {len(work):,})")
+        sampled_idx = work.sample(n=max_rows, random_state=random_state).index
+        row_positions = df.index.get_indexer(sampled_idx)
+        work = df.loc[sampled_idx].copy()
+
+    if feature_matrix is not None:
+        if feature_matrix.shape[0] != len(df):
+            sys.exit(
+                "[ERROR] feature_matrix row count must match dataframe length "
+                "before SHAP subsampling."
+            )
+        if row_positions is not None:
+            X = feature_matrix[row_positions].astype(np.float32)
+        else:
+            X = feature_matrix.astype(np.float32)
+    else:
+        X = work[feature_cols].values.astype(np.float32)
+
+    if "pdb_id" not in work.columns:
+        if "Name" in work.columns:
+            work["pdb_id"] = work["Name"].astype(str).str.split("-").str[0]
+        elif "_name_upper" in work.columns:
+            work["pdb_id"] = work["_name_upper"].astype(str).str.split("-").str[0]
+
+    if "pdb_id" in work.columns:
+        work["pdb_name"] = work["pdb_id"]
+    if "Warhead" in work.columns:
+        work["warhead_name"] = work["Warhead"]
+
+    if "pred_score" in work.columns:
+        work["candidate_rank"] = compute_candidate_ranks(work)
+
+    print(f"  Computing SHAP for {len(work):,} candidates × {len(feature_cols)} features...")
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(X)
+    if isinstance(shap_values, list):
+        shap_values = shap_values[0] if len(shap_values) == 1 else np.mean(
+            shap_values, axis=0
+        )
+    shap_values = np.asarray(shap_values, dtype=np.float64)
+
+    meta_candidates = [
+        "Name", "pdb_id", "pdb_name", "Warhead", "warhead_name", "query_group",
+        "Residue", "ResNum", "Chain",
+        "pred_score", "candidate_rank", "relevance",
+    ]
+    meta_cols = [c for c in meta_candidates if c in work.columns]
+    meta_df = work[meta_cols].reset_index(drop=True)
+
+    value_cols: dict[str, pd.Series] = {}
+    shap_cols: dict[str, pd.Series] = {}
+    for j, feat in enumerate(feature_cols):
+        if feat in work.columns:
+            value_cols[feat] = work[feat].reset_index(drop=True)
+        else:
+            value_cols[feat] = pd.Series(X[:, j], name=feat)
+        shap_cols[f"shap_{feat}"] = pd.Series(shap_values[:, j], name=f"shap_{feat}")
+
+    interleaved: list[pd.DataFrame] = [meta_df]
+    for feat in feature_cols:
+        interleaved.append(value_cols[feat].to_frame(name=feat))
+        interleaved.append(shap_cols[f"shap_{feat}"].to_frame(name=f"shap_{feat}"))
+    detail_df = pd.concat(interleaved, axis=1)
+
+    fi_map = {}
+    if hasattr(model, "feature_importances_"):
+        fi_map = dict(zip(feature_cols, model.feature_importances_))
+
+    global_df = pd.DataFrame({
+        "feature": feature_cols,
+        "mean_shap": np.mean(shap_values, axis=0),
+        "mean_abs_shap": np.mean(np.abs(shap_values), axis=0),
+        "std_shap": np.std(shap_values, axis=0),
+        "lgbm_gain_importance": [fi_map.get(f, np.nan) for f in feature_cols],
+    }).sort_values("mean_abs_shap", ascending=False)
+
+    if per_candidate_path is None:
+        if output_dir is None:
+            raise ValueError("Provide output_dir or per_candidate_path for SHAP export.")
+        per_candidate_path = os.path.join(output_dir, f"{prefix}_shap_per_candidate.csv")
+    if global_path is None:
+        per_path = Path(per_candidate_path)
+        if per_path.stem.endswith("_per_candidate"):
+            global_path = str(
+                per_path.with_name(
+                    per_path.stem.replace("_per_candidate", "_global") + per_path.suffix
+                )
+            )
+        elif output_dir is not None:
+            global_path = os.path.join(output_dir, f"{prefix}_shap_global.csv")
+        else:
+            global_path = str(
+                per_path.with_name(per_path.stem + "_global" + per_path.suffix)
+            )
+
+    detail_df.to_csv(per_candidate_path, index=False)
+    global_df.to_csv(global_path, index=False)
+    print(f"  SHAP per candidate: {per_candidate_path}")
+    print(f"  SHAP global:        {global_path}")
+
+    return detail_df, global_df
+
+
+def export_screen_eval_csvs(
+    test_eval_df: pd.DataFrame,
+    scored_test_df: pd.DataFrame,
+    labels_csv: str,
+    output_dir: str,
+    reward_mode: str,
+    prefix: str = "test",
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Write per-label, query-group, warhead, and residue accuracy CSVs.
+
+    Uses the same helpers as Cov_Screen.py (lazy import to avoid circular deps).
+    Metrics are computed per query group, never pooled across candidates.
+    """
+    from Cov_Screen import (
+        aggregate_label_eval_rows,
+        build_label_warhead_counts,
+        enrich_query_group_eval,
+        per_residue_accuracy_breakdown,
+        per_warhead_screen_breakdown,
+    )
+
+    os.makedirs(output_dir, exist_ok=True)
+    label_wh_counts = build_label_warhead_counts(labels_csv)
+    eval_qg_df = enrich_query_group_eval(test_eval_df, scored_test_df)
+    eval_label_df = aggregate_label_eval_rows(
+        eval_qg_df, perfect_match=False, label_wh_counts=label_wh_counts,
+    )
+    warhead_df = per_warhead_screen_breakdown(eval_qg_df, reward_mode)
+    residue_df = per_residue_accuracy_breakdown(
+        eval_qg_df, eval_label_df, reward_mode,
+    )
+
+    label_path = os.path.join(output_dir, f"{prefix}_label_results.csv")
+    qg_path = os.path.join(output_dir, f"{prefix}_query_groups.csv")
+    warhead_path = os.path.join(output_dir, f"{prefix}_warhead_accuracy.csv")
+    residue_path = os.path.join(output_dir, f"{prefix}_residue_accuracy.csv")
+
+    eval_label_df.to_csv(label_path, index=False)
+    print(f"  Test label results:     {label_path}")
+    eval_qg_df.to_csv(qg_path, index=False)
+    print(f"  Test query groups:      {qg_path}")
+    if warhead_df.empty:
+        print("  [WARN] No warhead accuracy breakdown to export.")
+    else:
+        warhead_df.to_csv(warhead_path, index=False)
+        print(f"  Test warhead accuracy:  {warhead_path}")
+    if residue_df.empty:
+        print("  [WARN] No residue accuracy breakdown to export.")
+    else:
+        residue_df.to_csv(residue_path, index=False)
+        print(f"  Test residue accuracy:  {residue_path}")
+
+    return eval_label_df, eval_qg_df, warhead_df, residue_df
+
+
 def save_outputs(
     model: lgb.LGBMRanker,
     feature_cols: list[str],
     test_eval_df: pd.DataFrame,
+    scored_test_df: pd.DataFrame,
+    labels_csv: str,
     cv_summary: dict,
+    cv_folds_df: pd.DataFrame,
     output_dir: str,
     k: int,
     top_pct_threshold: float,
@@ -1126,6 +1592,10 @@ def save_outputs(
     epsilon: float,
     composition: dict | None = None,
     large_pool_prefilter: dict | None = None,
+    include_residue_type: bool = True,
+    export_shap: bool = True,
+    shap_max_rows: int | None = None,
+    train_pool_totals_before_filter: dict[str, int] | None = None,
 ):
     os.makedirs(output_dir, exist_ok=True)
 
@@ -1134,6 +1604,7 @@ def save_outputs(
         pickle.dump({
             "model": model,
             "features": feature_cols,
+            "include_residue_type": include_residue_type,
             "k": k,
             "reward_mode": reward_mode,
             "top_pct_threshold": top_pct_threshold,
@@ -1150,26 +1621,43 @@ def save_outputs(
     fi.to_csv(fi_path, index=False)
     print(f"  Feature importance: {fi_path}")
 
+    if not cv_folds_df.empty:
+        cv_path = os.path.join(output_dir, "cv_fold_results.csv")
+        _cv_folds_to_export_df(cv_folds_df, cv_summary).to_csv(cv_path, index=False)
+        print(f"  CV fold results: {cv_path}")
+
     res_path = os.path.join(output_dir, "test_results.csv")
     test_eval_df.to_csv(res_path, index=False)
-    print(f"  Test results:  {res_path}")
+    print(f"  Test results (qg): {res_path}")
 
-    test_overall = summarize_eval_metrics(
-        test_eval_df, k, top_pct_threshold, reward_mode, epsilon
+    eval_label_df, eval_qg_df, warhead_df, residue_df = export_screen_eval_csvs(
+        test_eval_df=test_eval_df,
+        scored_test_df=scored_test_df,
+        labels_csv=labels_csv,
+        output_dir=output_dir,
+        reward_mode=reward_mode,
+        prefix="test",
     )
-    per_res = (test_eval_df.groupby("target_residue_type")
-               .agg(
-                   N=("hit_at_k", "count"),
-                   objective=("objective", "mean"),
-                   hit_rate=("hit_at_k", "mean"),
-                   hit_at_top_pct=("hit_at_top_pct", "mean"),
-                   ndcg=("ndcg_at_k", "mean"),
-                   avg_rank=("target_rank", "mean"),
-                   avg_top_pct=("top_pct", "mean"),
-                   avg_search_space_reduction=("search_space_reduction", "mean"),
-               )
-               .reset_index()
-               .to_dict(orient="records"))
+
+    shap_global_df = pd.DataFrame()
+    if export_shap:
+        _, shap_global_df = export_shap_csvs(
+            model=model,
+            df=scored_test_df,
+            feature_cols=feature_cols,
+            output_dir=output_dir,
+            prefix="test",
+            max_rows=shap_max_rows,
+        )
+
+    from Cov_Screen import per_residue_screen_breakdown, summarize_screen_metrics
+
+    test_overall = summarize_screen_metrics(
+        eval_label_df, eval_qg_df, k, top_pct_threshold, reward_mode, epsilon,
+    )
+    per_res = per_residue_screen_breakdown(eval_label_df, eval_qg_df).to_dict(
+        orient="records"
+    )
 
     summary = {
         "k": k,
@@ -1178,17 +1666,46 @@ def save_outputs(
         "rank_bonus_epsilon": epsilon,
         "large_pool_prefilter": large_pool_prefilter,
         "cv": cv_summary,
+        "cv_folds": cv_folds_df.to_dict(orient="records"),
         "test_overall": test_overall,
         "test_per_residue": per_res,
+        "test_per_residue_accuracy": residue_df.to_dict(orient="records"),
+        "test_per_warhead": warhead_df.to_dict(orient="records"),
     }
+    if not shap_global_df.empty:
+        summary["test_shap_global"] = shap_global_df.to_dict(orient="records")
     if composition and composition.get("n_query_groups"):
         comp_export = {
             k_: v for k_, v in composition.items() if k_ != "detail"
         }
+        if train_pool_totals_before_filter is not None:
+            comp_export["train_pool_residue_totals_before_filter"] = (
+                train_pool_totals_before_filter
+            )
         summary["residue_composition"] = comp_export
         comp_path = os.path.join(output_dir, "residue_composition_detail.csv")
-        composition["detail"].to_csv(comp_path, index=False)
+        detail_df = composition["detail"].copy()
+        totals_row = {
+            "query_group": "__test_totals__",
+            "label_type": "",
+            "rank1_type": "",
+            "rank1_matches_label_type": "",
+            "n_candidates": int(detail_df["n_candidates"].sum()),
+        }
+        for res in NUCLEOPHILE_RESIDUES:
+            col = f"n_{res}"
+            if col in detail_df.columns:
+                totals_row[col] = int(detail_df[col].sum())
+        detail_df = pd.concat(
+            [detail_df, pd.DataFrame([totals_row])],
+            ignore_index=True,
+        )
+        detail_df.to_csv(comp_path, index=False)
         print(f"  Residue composition: {comp_path}")
+        if train_pool_totals_before_filter is not None:
+            print("  Train nucleophile pool totals (before large-pool prefilter):")
+            for res in NUCLEOPHILE_RESIDUES:
+                print(f"    {res:3s}  {train_pool_totals_before_filter.get(res, 0):>8,}")
     summary_path = os.path.join(output_dir, "summary.json")
     with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2)
@@ -1258,6 +1775,12 @@ def parse_args():
                    help="Add binary feature resnum_eq_N for each residue number "
                         "N (e.g. --res-num 1 for position 1 / N-terminal signal). "
                         "Off by default.")
+    p.add_argument("--no-residue-type", action="store_true",
+                   help="Exclude residue type one-hot features (res_CYS, res_SER, "
+                        "etc.) from model inputs")
+    p.add_argument("--no-residue-specific-features", action="store_true",
+                   help="Exclude --residue_specific_features (QM reactivity scores, "
+                        "Fukui, nucleophilicity, etc.) from model inputs")
     p.add_argument("--large-pool-prefilter", action="store_true",
                    help="Enable feature prefilter on large query groups in the "
                         "train split only (off by default). Requires "
@@ -1273,6 +1796,10 @@ def parse_args():
                         "Required with --large-pool-prefilter.")
     p.add_argument("--output_dir", default="lgbm_output",
                    help="Directory for output files")
+    p.add_argument("--no-shap", action="store_true",
+                   help="Skip SHAP CSV export (test_shap_per_candidate/global)")
+    p.add_argument("--shap-max-rows", type=int, default=None,
+                   help="Optional cap on rows for SHAP (random subsample if exceeded)")
     p.add_argument("--random_state", type=int, default=42)
     return p.parse_args()
 
@@ -1314,16 +1841,18 @@ def main():
     )
 
     # 4. Features
+    residue_specific_cols = (
+        [] if args.no_residue_specific_features else args.residue_specific_features
+    )
     # Deduplicate feature lists
-    all_req_features = list(dict.fromkeys(
-        args.features + args.residue_specific_features
-    ))
+    all_req_features = list(dict.fromkeys(args.features + residue_specific_cols))
     merged, feature_cols = build_features(
         merged,
         feature_cols=all_req_features,
-        residue_specific_cols=args.residue_specific_features,
+        residue_specific_cols=residue_specific_cols,
         normalize_within_protein=args.normalize_within_protein,
         resnum_equals=args.res_num,
+        include_residue_type=not args.no_residue_type,
     )
 
     # 5. Train
@@ -1334,6 +1863,8 @@ def main():
     train_df = train_df.sort_values("query_group").reset_index(drop=True)
     test_df  = test_df.sort_values("query_group").reset_index(drop=True)
 
+    train_pool_totals_before_filter = aggregate_nucleophile_totals(train_df)
+
     if args.large_pool_prefilter:
         train_df, large_pool_prefilter_meta = apply_large_pool_prefilter(
             train_df,
@@ -1342,7 +1873,7 @@ def main():
         )
         train_df = train_df.sort_values("query_group").reset_index(drop=True)
 
-    model, cv_summary = train_with_crossval(
+    model, cv_summary, cv_folds_df = train_with_crossval(
         train_df, feature_cols,
         n_folds=args.n_folds,
         k=args.topk,
@@ -1377,7 +1908,10 @@ def main():
     print(f"[7/7] Saving outputs to '{args.output_dir}'...")
     save_outputs(
         model, feature_cols,
-        test_eval_df, cv_summary,
+        test_eval_df, test_df,
+        args.labels,
+        cv_summary,
+        cv_folds_df,
         args.output_dir,
         k=args.topk,
         top_pct_threshold=args.top_pct,
@@ -1385,6 +1919,10 @@ def main():
         epsilon=args.rank_bonus_epsilon,
         composition=composition,
         large_pool_prefilter=large_pool_prefilter_meta,
+        include_residue_type=not args.no_residue_type,
+        export_shap=not args.no_shap,
+        shap_max_rows=args.shap_max_rows,
+        train_pool_totals_before_filter=train_pool_totals_before_filter,
     )
 
     print("Done.")
