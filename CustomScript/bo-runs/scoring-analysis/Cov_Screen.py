@@ -24,6 +24,28 @@ Usage:
         [--export-shap ./screen_shap_per_candidate.csv] \\
         [--export-query-groups ./screen_query_group_results.csv] \\
         [--export-scores ./screen_scores.csv]
+
+    python Cov_Screen.py   --model lgbm_ranker_nc.pkl   --training training_bo_extended_full.csv   --labels labels_figures.csv   --reward-mode hit_at_top_pct--top-pct 10   --export-results ./figures_screen_results.csv   --export-scores ./figures_screen_results.csv   --export-summary ./figures_summary.json --perfect-match
+
+    # Virtual screening: rank unique ligand Names across all training sites of --residue.
+    # Labels provide ligand Names and warhead matching only (Residue/ResNum/Chain ignored).
+    python Cov_Screen.py \\
+        --VS \\
+        --model ./cov_lgbm_output/lgbm_ranker.pkl \\
+        --training vs_training.csv \\
+        --labels vs_labels.csv \\
+        --residue CYS \\
+        [--chain A] [--resnum 797] \\
+        [--export-vs-results ./vs_results.csv]
+
+    # VS by mean site pred_score (no intra/inter ranks; higher avg_pred_score = better):
+    python Cov_Screen.py \\
+        --VS --pred-score \\
+        --model ./cov_lgbm_output/lgbm_ranker.pkl \\
+        --training vs_training.csv \\
+        --labels vs_labels.csv \\
+        --residue CYS \\
+        [--export-vs-results ./vs_pred_score_results.csv]
 """
 
 from __future__ import annotations
@@ -43,10 +65,13 @@ from Training_Cov_Screen import (
     VALID_RESIDUES,
     _format_rank_when_hit,
     _format_ss_when_hit,
+    _format_ss_when_miss,
+    _matching_training_warheads,
     _normalize_resnum,
     evaluate_predictions,
     load_and_merge,
     summarize_eval_metrics,
+    summarize_screen_metrics,
     analyze_residue_composition,
     print_residue_composition,
     export_shap_csvs,
@@ -60,6 +85,687 @@ def make_label_key(name, residue, resnum, chain) -> tuple[str, str, str, str]:
         _normalize_resnum(resnum),
         str(chain).strip().upper(),
     )
+
+
+def vs_site_column(residue: str, resnum, chain: str) -> str:
+    """Column key for a residue site, e.g. cys797A."""
+    return (
+        f"{str(residue).strip().lower()}"
+        f"{_normalize_resnum(resnum)}"
+        f"{str(chain).strip().upper()}"
+    )
+
+
+def _active_hit_column(reward_mode: str) -> str:
+    return "hit_at_top_pct" if reward_mode == "hit_at_top_pct" else "hit_at_k"
+
+
+def _hits_from_mean_rank(
+    mean_rank: float,
+    n_residues: float,
+    k: int,
+    top_pct_threshold: float,
+) -> tuple[int, int, float]:
+    """
+    Derive Hit@K and Hit@top-% from a mean intra-protein rank (VS warhead aggregate).
+    """
+    p_frac = top_pct_threshold / 100.0
+    hit_at_k = int(mean_rank <= k)
+    if n_residues <= 1:
+        rank_frac = 0.0
+    else:
+        rank_frac = (mean_rank - 1) / (n_residues - 1)
+    hit_at_top_pct = int(rank_frac <= p_frac) if p_frac > 0 else hit_at_k
+    return hit_at_k, hit_at_top_pct, float(rank_frac)
+
+
+def filter_vs_site_eval(
+    site_eval_df: pd.DataFrame,
+    residue: str,
+    chain: str | None = None,
+    resnum: str | int | None = None,
+) -> pd.DataFrame:
+    """Keep site-eval rows for VS ranking (residue type, optional chain/resnum)."""
+    if site_eval_df.empty:
+        return site_eval_df.copy()
+
+    residue_upper = str(residue).strip().upper()
+    if residue_upper not in VALID_RESIDUES:
+        sys.exit(
+            f"[ERROR] --residue must be one of {sorted(VALID_RESIDUES)}, got {residue!r}"
+        )
+
+    out = site_eval_df[
+        site_eval_df["Residue"].astype(str).str.strip().str.upper() == residue_upper
+    ].copy()
+    if chain is not None:
+        chain_upper = str(chain).strip().upper()
+        out = out[
+            out["Chain"].astype(str).str.strip().str.upper() == chain_upper
+        ]
+    if resnum is not None:
+        target_resnum = _normalize_resnum(resnum)
+        out = out[out["ResNum"].map(_normalize_resnum) == target_resnum]
+
+    return out.reset_index(drop=True)
+
+
+def build_name_warhead_counts(labels_csv: str) -> dict[str, int]:
+    """Frankenstein warhead count per ligand Name (for perfect-match in VS)."""
+    labels = pd.read_csv(labels_csv, sep=",", engine="c", low_memory=False)
+    counts: dict[str, int] = {}
+
+    for _, row in labels.iterrows():
+        name = str(row["Name"]).strip().upper()
+        frank = row.get("Frankenstein_Warhead", row.get("Warhead", ""))
+        if pd.isna(frank) or not str(frank).strip():
+            wh_set = (
+                {str(row.get("Warhead", "")).strip().lower()}
+                if pd.notna(row.get("Warhead")) else set()
+            )
+            wh_set.discard("")
+            n = len(wh_set) if wh_set else 1
+        else:
+            n = len([w for w in str(frank).split(",") if w.strip()])
+            n = max(n, 1)
+        counts[name] = max(counts.get(name, 0), n)
+
+    return counts
+
+
+def _format_site_label(residue, resnum, chain) -> str:
+    res = str(residue).strip().upper()
+    num = _normalize_resnum(resnum)
+    ch = str(chain).strip().upper()
+    return f"{res} {num}/{ch}" if ch else f"{res} {num}"
+
+
+def _check_warhead_coverage(
+    *,
+    perfect_match: bool,
+    expected_count: int,
+    n_matched: int,
+    context: str,
+    strict: bool,
+) -> bool:
+    """
+    Warn or exit when --perfect-match expects all listed warheads but the
+    training join returned fewer query groups than expected.
+    """
+    if not perfect_match or expected_count <= 1 or n_matched >= expected_count:
+        return False
+
+    msg = (
+        f"[WARN] {context}: only {n_matched}/{expected_count} warheads matched "
+        f"in training data — perfect-match runs .all() on this partial set only"
+    )
+    if strict:
+        sys.exit(f"[ERROR] {msg}")
+    print(msg)
+    return True
+
+
+def load_merged_for_vs(training_csv: str, labels_csv: str) -> pd.DataFrame:
+    """
+    Load all training candidates for ligand Names in labels.
+
+    Labels supply Name + warhead matching only. Residue/ResNum/Chain in the labels
+    CSV are ignored. Every screened residue in each matched (Name × Warhead) group
+    is retained.
+    """
+    print("\n[INFO] VS load: all training candidates per ligand query group...")
+    train_df = pd.read_csv(training_csv, sep=",", engine="c", low_memory=False)
+    label_df = pd.read_csv(labels_csv, sep=",", engine="c", low_memory=False)
+
+    train_df["_name_upper"] = train_df["Name"].str.strip().str.upper()
+    train_df["_warhead_lower"] = train_df["Warhead"].str.strip().str.lower()
+    train_df["Residue"] = train_df["Residue"].str.strip().str.upper()
+    train_df["_resnum_str"] = train_df["ResNum"].map(_normalize_resnum)
+    train_df["_chain_upper"] = train_df["Chain"].astype(str).str.strip().str.upper()
+
+    label_df["_name_upper"] = label_df["Name"].str.strip().str.upper()
+
+    train_df = train_df[train_df["Residue"].isin(VALID_RESIDUES)].copy()
+    train_df = train_df.drop_duplicates(
+        subset=["_name_upper", "Residue", "_resnum_str", "_chain_upper", "_warhead_lower"],
+        keep="first",
+    )
+
+    warheads_by_name: dict[str, list[str]] = (
+        train_df.groupby("_name_upper")["Warhead"]
+        .apply(lambda s: list(s.unique()))
+        .to_dict()
+    )
+
+    name_warheads: dict[str, set[str]] = {}
+    unmatched_names: set[str] = set()
+
+    for _, lrow in label_df.iterrows():
+        name = lrow["_name_upper"]
+        frank_wh = lrow.get("Frankenstein_Warhead", lrow.get("Warhead", ""))
+
+        matched_whs = _matching_training_warheads(name, frank_wh, warheads_by_name)
+        if not matched_whs:
+            unmatched_names.add(name)
+            continue
+
+        name_warheads.setdefault(name, set()).update(matched_whs)
+
+    if not name_warheads:
+        print("ERROR: No training rows matched any label Name. Check name/warhead formats.")
+        sys.exit(1)
+
+    pair_rows = [
+        {"_name_upper": name, "_warhead_lower": wh}
+        for name, whs in sorted(name_warheads.items())
+        for wh in sorted(whs)
+    ]
+    pairs_df = pd.DataFrame(pair_rows)
+
+    merged = train_df.merge(pairs_df, on=["_name_upper", "_warhead_lower"], how="inner")
+    merged["query_group"] = merged["_name_upper"] + "__" + merged["_warhead_lower"]
+    merged["target_residue_type"] = merged["Residue"]
+
+    print(f"  Training rows (VS) : {len(merged):,}")
+    print(f"  Ligand Names       : {merged['_name_upper'].nunique():,}")
+    print(f"  Query groups       : {merged['query_group'].nunique():,}")
+    if unmatched_names:
+        print(f"  Unmatched Names    : {len(unmatched_names):,}")
+
+    return merged
+
+
+def compute_vs_candidate_ranks(
+    merged: pd.DataFrame,
+    score_col: str,
+    k: int,
+    top_pct_threshold: float,
+) -> pd.DataFrame:
+    """Per training row: rank within its (Name × Warhead) query group."""
+    p_frac = top_pct_threshold / 100.0
+    rows: list[dict] = []
+
+    for qg, grp in merged.groupby("query_group"):
+        grp_sorted = grp.sort_values(score_col, ascending=False).reset_index(drop=True)
+        n_residues = int(len(grp_sorted))
+        name = str(grp_sorted["_name_upper"].iloc[0])
+
+        for idx, row in grp_sorted.iterrows():
+            target_rank = int(idx + 1)
+            if n_residues <= 1:
+                rank_frac = 0.0
+            else:
+                rank_frac = (target_rank - 1) / (n_residues - 1)
+            hit_at_k = int(target_rank <= k)
+            hit_at_top_pct = (
+                int(rank_frac <= p_frac) if p_frac > 0 else hit_at_k
+            )
+            rows.append({
+                "query_group": qg,
+                "Name": name,
+                "Warhead": row["Warhead"],
+                "Residue": row["Residue"],
+                "ResNum": row["ResNum"],
+                "Chain": row["Chain"],
+                "target_rank": target_rank,
+                "hit_at_k": hit_at_k,
+                "hit_at_top_pct": hit_at_top_pct,
+                "n_residues": n_residues,
+            })
+
+    return pd.DataFrame(rows)
+
+
+def aggregate_vs_site_rows(
+    candidate_df: pd.DataFrame,
+    k: int,
+    top_pct_threshold: float,
+    perfect_match: bool,
+    name_wh_counts: dict[str, int],
+    strict_warhead_coverage: bool = False,
+) -> pd.DataFrame:
+    """
+    Collapse warhead-level candidate rows to one row per (Name, Residue, ResNum, Chain).
+
+    Intra-protein rank is the mean target_rank across matched warheads. Hit@K and
+    Hit@top-% are derived from that mean rank and the active reward thresholds
+    (not per-warhead .all() / .any()).
+    """
+    if candidate_df.empty:
+        return candidate_df.copy()
+
+    rows_out: list[dict] = []
+    incomplete_sites = 0
+    group_cols = ["Name", "Residue", "ResNum", "Chain"]
+
+    for key, grp in candidate_df.groupby(group_cols, sort=True):
+        name = str(key[0]).strip().upper()
+        name_wh_count = name_wh_counts.get(name, 1)
+        n_matched = int(len(grp))
+
+        if _check_warhead_coverage(
+            perfect_match=perfect_match,
+            expected_count=name_wh_count,
+            n_matched=n_matched,
+            context=(
+                f"{key[0]} at site {_format_site_label(key[1], key[2], key[3])}"
+            ),
+            strict=strict_warhead_coverage,
+        ):
+            incomplete_sites += 1
+
+        mean_rank = float(grp["target_rank"].mean()) if n_matched else float("nan")
+        mean_n_residues = float(grp["n_residues"].mean()) if n_matched else float("nan")
+        if n_matched and not pd.isna(mean_rank):
+            label_hit_k, label_hit_top, rank_frac = _hits_from_mean_rank(
+                mean_rank, mean_n_residues, k, top_pct_threshold,
+            )
+        else:
+            label_hit_k, label_hit_top, rank_frac = 0, 0, float("nan")
+
+        rows_out.append({
+            "Name": key[0],
+            "Residue": key[1],
+            "ResNum": key[2],
+            "Chain": key[3],
+            "name_warhead_count": name_wh_count,
+            "n_matched_warheads": n_matched,
+            "mean_target_rank": mean_rank,
+            "target_rank": mean_rank,
+            "mean_n_residues": mean_n_residues,
+            "rank_frac": rank_frac,
+            "hit_at_k": label_hit_k,
+            "hit_at_top_pct": label_hit_top,
+        })
+
+    if incomplete_sites:
+        print(
+            f"\n[WARN] Incomplete warhead coverage: {incomplete_sites} "
+            f"(Name × site) group(s) had fewer warheads than expected "
+            f"while --perfect-match was enabled."
+        )
+
+    return pd.DataFrame(rows_out)
+
+
+def aggregate_vs_site_pred_scores(
+    merged: pd.DataFrame,
+    perfect_match: bool,
+    name_wh_counts: dict[str, int],
+    strict_warhead_coverage: bool = False,
+) -> pd.DataFrame:
+    """
+    One row per (Name, Residue, ResNum, Chain) with mean pred_score across
+    label-matched warheads (training rows already filtered to matched warheads).
+    """
+    if merged.empty:
+        return merged.copy()
+
+    rows_out: list[dict] = []
+    incomplete_sites = 0
+    group_cols = ["Name", "Residue", "ResNum", "Chain"]
+
+    for key, grp in merged.groupby(group_cols, sort=True):
+        name = str(key[0]).strip().upper()
+        name_wh_count = name_wh_counts.get(name, 1)
+        n_matched = int(len(grp))
+
+        if _check_warhead_coverage(
+            perfect_match=perfect_match,
+            expected_count=name_wh_count,
+            n_matched=n_matched,
+            context=(
+                f"{key[0]} at site {_format_site_label(key[1], key[2], key[3])}"
+            ),
+            strict=strict_warhead_coverage,
+        ):
+            incomplete_sites += 1
+
+        mean_score = float(grp["pred_score"].mean()) if n_matched else float("nan")
+        rows_out.append({
+            "Name": key[0],
+            "Residue": key[1],
+            "ResNum": key[2],
+            "Chain": key[3],
+            "name_warhead_count": name_wh_count,
+            "n_matched_warheads": n_matched,
+            "mean_pred_score": mean_score,
+            "pred_score": mean_score,
+        })
+
+    if incomplete_sites:
+        print(
+            f"\n[WARN] Incomplete warhead coverage: {incomplete_sites} "
+            f"(Name × site) group(s) had fewer warheads than expected "
+            f"while --perfect-match was enabled."
+        )
+
+    return pd.DataFrame(rows_out)
+
+
+def build_vs_site_eval_from_merged(
+    merged: pd.DataFrame,
+    score_col: str,
+    residue: str,
+    k: int,
+    top_pct_threshold: float,
+    perfect_match: bool,
+    name_wh_counts: dict[str, int],
+    chain: str | None = None,
+    resnum: str | int | None = None,
+    strict_warhead_coverage: bool = False,
+) -> pd.DataFrame:
+    """Rank all training sites of *residue* per ligand (not label targets only)."""
+    candidate_df = compute_vs_candidate_ranks(
+        merged, score_col, k=k, top_pct_threshold=top_pct_threshold,
+    )
+    site_eval = aggregate_vs_site_rows(
+        candidate_df,
+        k=k,
+        top_pct_threshold=top_pct_threshold,
+        perfect_match=perfect_match,
+        name_wh_counts=name_wh_counts,
+        strict_warhead_coverage=strict_warhead_coverage,
+    )
+    return filter_vs_site_eval(site_eval, residue, chain=chain, resnum=resnum)
+
+
+def _compute_intra_protein_ranks(
+    site_rows: pd.DataFrame,
+    hit_col: str,
+) -> pd.DataFrame:
+    """
+    Per Name × site: use mean warhead target_rank (already aggregated in site_eval).
+
+    Hits and misses alike keep that mean intra-protein rank so inter-ligand
+    comparison distinguishes a near-miss from a poor rank.
+    """
+    rows: list[dict] = []
+    for name, grp in site_rows.groupby("Name", sort=True):
+        for _, row in grp.iterrows():
+            site = str(row["site"])
+            is_hit = int(row[hit_col]) == 1
+            mean_rank = float(row["target_rank"])
+            rows.append({
+                "Name": name,
+                "site": site,
+                "Residue": row["Residue"],
+                "ResNum": row["ResNum"],
+                "Chain": row["Chain"],
+                "target_rank": mean_rank,
+                "mean_target_rank": mean_rank,
+                "is_hit": int(is_hit),
+                "intra_rank": mean_rank,
+            })
+
+    return pd.DataFrame(rows)
+
+
+def _add_inter_protein_ranks(intra_df: pd.DataFrame) -> pd.DataFrame:
+    """Per site column, rank Names by intra_rank (lower is better)."""
+    if intra_df.empty:
+        return intra_df.copy()
+
+    out = intra_df.copy()
+    out["inter_rank"] = 0
+    for site, grp in out.groupby("site", sort=True):
+        idx = grp.index
+        out.loc[idx, "inter_rank"] = (
+            grp["intra_rank"].rank(method="min", ascending=True).astype(int)
+        )
+    return out
+
+
+def build_vs_results(
+    site_eval_df: pd.DataFrame,
+    residue: str,
+    reward_mode: str,
+    chain: str | None = None,
+    resnum: str | int | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Build virtual-screening rankings from per-site training ranks.
+
+    Returns (wide_summary, long_detail) where wide_summary has one row per Name
+    with per-site intra/inter ranks, avg inter rank, and overall rank.
+    """
+    hit_col = _active_hit_column(reward_mode)
+    filtered = filter_vs_site_eval(site_eval_df, residue, chain=chain, resnum=resnum)
+    if filtered.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    site_rows = filtered.copy()
+    site_rows["site"] = site_rows.apply(
+        lambda r: vs_site_column(r["Residue"], r["ResNum"], r["Chain"]),
+        axis=1,
+    )
+    site_rows = site_rows.drop_duplicates(subset=["Name", "site"], keep="first")
+
+    intra_df = _compute_intra_protein_ranks(site_rows, hit_col)
+    ranked_df = _add_inter_protein_ranks(intra_df)
+
+    sites = sorted(ranked_df["site"].unique())
+    names = sorted(ranked_df["Name"].unique())
+
+    wide: dict[str, dict[str, object]] = {
+        name: {"Name": name} for name in names
+    }
+    for _, row in ranked_df.iterrows():
+        name = row["Name"]
+        site = row["site"]
+        wide[name][f"{site}_intra"] = float(row["intra_rank"])
+        wide[name][f"{site}_inter"] = int(row["inter_rank"])
+        wide[name][f"{site}_hit"] = int(row["is_hit"])
+        wide[name][f"{site}_target_rank"] = float(row["target_rank"])
+
+    summary_rows: list[dict] = []
+    for name in names:
+        row_data = wide[name]
+        inter_vals = [
+            int(row_data[f"{site}_inter"])
+            for site in sites
+            if f"{site}_inter" in row_data
+        ]
+        hit_vals = [
+            int(row_data[f"{site}_hit"])
+            for site in sites
+            if f"{site}_hit" in row_data
+        ]
+        n_sites = len(inter_vals)
+        n_hits = int(sum(hit_vals))
+        n_misses = int(n_sites - n_hits)
+        avg_inter = float(np.mean(inter_vals)) if inter_vals else float("nan")
+
+        summary_rows.append({
+            "Name": name,
+            "n_sites": n_sites,
+            "n_hits": n_hits,
+            "n_misses": n_misses,
+            "avg_inter_rank": avg_inter,
+            **row_data,
+        })
+
+    wide_df = pd.DataFrame(summary_rows)
+    wide_df = wide_df.sort_values(
+        ["n_misses", "avg_inter_rank", "Name"],
+        ascending=[True, True, True],
+    ).reset_index(drop=True)
+    wide_df["overall_rank"] = np.arange(1, len(wide_df) + 1)
+
+    meta_cols = [
+        "Name", "overall_rank", "avg_inter_rank", "n_hits", "n_misses", "n_sites",
+    ]
+    site_cols: list[str] = []
+    for site in sites:
+        site_cols.extend([
+            f"{site}_intra",
+            f"{site}_inter",
+            f"{site}_hit",
+            f"{site}_target_rank",
+        ])
+    ordered = meta_cols + [c for c in site_cols if c in wide_df.columns]
+    wide_df = wide_df[ordered]
+
+    return wide_df, ranked_df
+
+
+def print_vs_results(
+    vs_wide_df: pd.DataFrame,
+    residue: str,
+    reward_mode: str,
+    chain: str | None = None,
+    resnum: str | int | None = None,
+) -> None:
+    hit_col = _active_hit_column(reward_mode)
+    filt = f"residue={residue.upper()}"
+    if chain is not None:
+        filt += f", chain={str(chain).upper()}"
+    if resnum is not None:
+        filt += f", resnum={_normalize_resnum(resnum)}"
+
+    print(f"\n{'='*60}")
+    print("  Virtual Screening Results")
+    print(f"{'='*60}")
+    print(f"  Filter            : {filt}")
+    print(f"  Hit criterion     : {hit_col}")
+    print(f"  Site source       : all training candidates (not label targets only)")
+    print(f"  Ligands (Names)   : {len(vs_wide_df):,}")
+    if vs_wide_df.empty:
+        print("  [WARN] No VS results to display.")
+        print(f"{'='*60}\n")
+        return
+
+    site_cols = sorted({
+        c.rsplit("_", 1)[0]
+        for c in vs_wide_df.columns
+        if c.endswith("_intra")
+    })
+    print(f"  Residue sites     : {len(site_cols):,}")
+    print()
+    show_cols = ["Name", "overall_rank", "avg_inter_rank", "n_hits", "n_misses"]
+    if len(site_cols) <= 6:
+        for site in site_cols:
+            show_cols.extend([f"{site}_intra", f"{site}_inter"])
+    print(vs_wide_df[show_cols].head(20).to_string(index=False))
+    if len(vs_wide_df) > 20:
+        print(f"  ... ({len(vs_wide_df) - 20:,} more ligands)")
+    print(f"{'='*60}\n")
+
+
+def build_vs_pred_score_results(
+    site_df: pd.DataFrame,
+    residue: str,
+    chain: str | None = None,
+    resnum: str | int | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Rank ligands by mean site pred_score (higher is better).
+
+    Per site: mean pred_score across matched warheads for that ligand.
+    Overall: average of site pred_scores; overall_rank 1 = highest avg_pred_score.
+    """
+    filtered = filter_vs_site_eval(site_df, residue, chain=chain, resnum=resnum)
+    if filtered.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    long_df = filtered.copy()
+    long_df["site"] = long_df.apply(
+        lambda r: vs_site_column(r["Residue"], r["ResNum"], r["Chain"]),
+        axis=1,
+    )
+    long_df = long_df.drop_duplicates(subset=["Name", "site"], keep="first")
+    long_df = long_df[
+        [
+            "Name", "site", "Residue", "ResNum", "Chain",
+            "pred_score", "mean_pred_score", "n_matched_warheads",
+            "name_warhead_count",
+        ]
+    ].sort_values(["Name", "site"]).reset_index(drop=True)
+
+    sites = sorted(long_df["site"].unique())
+    names = sorted(long_df["Name"].unique())
+
+    wide: dict[str, dict[str, object]] = {
+        name: {"Name": name} for name in names
+    }
+    for _, row in long_df.iterrows():
+        name = row["Name"]
+        site = row["site"]
+        wide[name][f"{site}_pred_score"] = float(row["pred_score"])
+        wide[name][f"{site}_n_warheads"] = int(row["n_matched_warheads"])
+
+    summary_rows: list[dict] = []
+    for name in names:
+        row_data = wide[name]
+        score_vals = [
+            float(row_data[f"{site}_pred_score"])
+            for site in sites
+            if f"{site}_pred_score" in row_data
+        ]
+        avg_score = float(np.mean(score_vals)) if score_vals else float("nan")
+        summary_rows.append({
+            "Name": name,
+            "n_sites": len(score_vals),
+            "avg_pred_score": avg_score,
+            **row_data,
+        })
+
+    wide_df = pd.DataFrame(summary_rows)
+    wide_df = wide_df.sort_values(
+        ["avg_pred_score", "Name"],
+        ascending=[False, True],
+    ).reset_index(drop=True)
+    wide_df["overall_rank"] = np.arange(1, len(wide_df) + 1)
+
+    meta_cols = ["Name", "overall_rank", "avg_pred_score", "n_sites"]
+    site_cols: list[str] = []
+    for site in sites:
+        site_cols.extend([f"{site}_pred_score", f"{site}_n_warheads"])
+    ordered = meta_cols + [c for c in site_cols if c in wide_df.columns]
+    wide_df = wide_df[ordered]
+
+    return wide_df, long_df
+
+
+def print_vs_pred_score_results(
+    vs_wide_df: pd.DataFrame,
+    residue: str,
+    chain: str | None = None,
+    resnum: str | int | None = None,
+) -> None:
+    filt = f"residue={residue.upper()}"
+    if chain is not None:
+        filt += f", chain={str(chain).upper()}"
+    if resnum is not None:
+        filt += f", resnum={_normalize_resnum(resnum)}"
+
+    print(f"\n{'='*60}")
+    print("  Virtual Screening Results (pred_score)")
+    print(f"{'='*60}")
+    print(f"  Filter            : {filt}")
+    print(f"  Ranking           : mean site pred_score (warhead-mean); higher = better")
+    print(f"  Overall order     : avg_pred_score across sites (descending)")
+    print(f"  Ligands (Names)   : {len(vs_wide_df):,}")
+    if vs_wide_df.empty:
+        print("  [WARN] No VS results to display.")
+        print(f"{'='*60}\n")
+        return
+
+    site_cols = sorted({
+        c[: -len("_pred_score")]
+        for c in vs_wide_df.columns
+        if c.endswith("_pred_score")
+    })
+    print(f"  Residue sites     : {len(site_cols):,}")
+    print()
+    show_cols = ["Name", "overall_rank", "avg_pred_score", "n_sites"]
+    if len(site_cols) <= 6:
+        for site in site_cols:
+            show_cols.append(f"{site}_pred_score")
+    print(vs_wide_df[show_cols].head(20).to_string(index=False))
+    if len(vs_wide_df) > 20:
+        print(f"  ... ({len(vs_wide_df) - 20:,} more ligands)")
+    print(f"{'='*60}\n")
 
 
 def build_label_warhead_counts(labels_csv: str) -> dict[tuple[str, str, str, str], int]:
@@ -89,17 +795,33 @@ def enrich_query_group_eval(
     merged: pd.DataFrame,
 ) -> pd.DataFrame:
     """Attach label site + warhead metadata to per-query-group metrics."""
-    meta = (
-        merged.groupby("query_group")
-        .agg(
-            Name=("_name_upper", "first"),
-            Residue=("tgt_residue", "first"),
-            ResNum=("tgt_resnum", "first"),
-            Chain=("tgt_chain", "first"),
-            Warhead=("Warhead", "first"),
+    if {"tgt_residue", "tgt_resnum", "tgt_chain"}.issubset(merged.columns):
+        meta = (
+            merged.groupby("query_group")
+            .agg(
+                Name=("_name_upper", "first"),
+                Residue=("tgt_residue", "first"),
+                ResNum=("tgt_resnum", "first"),
+                Chain=("tgt_chain", "first"),
+                Warhead=("Warhead", "first"),
+            )
+            .reset_index()
         )
-        .reset_index()
-    )
+    else:
+        targets = merged.loc[merged["relevance"] == 1].copy()
+        if targets.empty:
+            targets = merged
+        meta = (
+            targets.groupby("query_group")
+            .agg(
+                Name=("_name_upper", "first"),
+                Residue=("Residue", "first"),
+                ResNum=("ResNum", "first"),
+                Chain=("Chain", "first"),
+                Warhead=("Warhead", "first"),
+            )
+            .reset_index()
+        )
     return eval_df.merge(meta, on="query_group", how="left")
 
 
@@ -107,6 +829,7 @@ def aggregate_label_eval_rows(
     eval_df: pd.DataFrame,
     perfect_match: bool,
     label_wh_counts: dict[tuple[str, str, str, str], int],
+    strict_warhead_coverage: bool = False,
 ) -> pd.DataFrame:
     """
     Collapse warhead-level (query-group) rows to one row per label site.
@@ -119,12 +842,24 @@ def aggregate_label_eval_rows(
         return eval_df.copy()
 
     rows_out: list[dict] = []
+    incomplete_labels = 0
 
     group_cols = ["Name", "Residue", "ResNum", "Chain"]
     for key, grp in eval_df.groupby(group_cols, sort=True):
         label_key = make_label_key(key[0], key[1], key[2], key[3])
         label_wh_count = label_wh_counts.get(label_key, 1)
         n_matched = len(grp)
+
+        if _check_warhead_coverage(
+            perfect_match=perfect_match,
+            expected_count=label_wh_count,
+            n_matched=n_matched,
+            context=(
+                f"{key[0]} at site {_format_site_label(key[1], key[2], key[3])}"
+            ),
+            strict=strict_warhead_coverage,
+        ):
+            incomplete_labels += 1
 
         matched_whs = sorted(grp["Warhead"].astype(str).unique())
         hitting_k = sorted(grp.loc[grp["hit_at_k"] == 1, "Warhead"].astype(str).unique())
@@ -168,60 +903,14 @@ def aggregate_label_eval_rows(
             "miss_reason":            miss_reason,
         })
 
+    if incomplete_labels:
+        print(
+            f"\n[WARN] Incomplete warhead coverage: {incomplete_labels} "
+            f"label site(s) had fewer warheads than expected while "
+            f"--perfect-match was enabled."
+        )
+
     return pd.DataFrame(rows_out)
-
-
-def summarize_screen_metrics(
-    eval_label_df: pd.DataFrame,
-    eval_qg_df: pd.DataFrame,
-    k: int,
-    top_pct_threshold: float,
-    reward_mode: str,
-    epsilon: float,
-) -> dict:
-    """
-    Hit/objective at label level; rank / NDCG / search-space stats over all
-    matched (Name × Warhead) query groups (may exceed label count).
-    """
-    label_stats = summarize_eval_metrics(
-        eval_label_df, k, top_pct_threshold, reward_mode, epsilon,
-    )
-    qg_stats = summarize_eval_metrics(
-        eval_qg_df, k, top_pct_threshold, reward_mode, epsilon,
-    )
-    return {
-        "reward_mode": reward_mode,
-        "top_pct_threshold": top_pct_threshold,
-        "k": k,
-        "epsilon": epsilon,
-        "n_labels": int(len(eval_label_df)),
-        "n_query_groups": int(len(eval_qg_df)),
-        "hit_rate": label_stats["hit_rate"],
-        "hit_at_top_pct": label_stats["hit_at_top_pct"],
-        "objective": label_stats["objective"],
-        "rank_bonus": label_stats["rank_bonus"],
-        "avg_rank": qg_stats["avg_rank"],
-        "median_rank": float(eval_qg_df["target_rank"].median()),
-        "ndcg": qg_stats["ndcg"],
-        "avg_top_pct": qg_stats["avg_top_pct"],
-        "avg_search_space_reduction": qg_stats["avg_search_space_reduction"],
-        "median_search_space_reduction": qg_stats["median_search_space_reduction"],
-        "avg_ss_reduction_when_hit_at_k": qg_stats["avg_ss_reduction_when_hit_at_k"],
-        "median_ss_reduction_when_hit_at_k": qg_stats["median_ss_reduction_when_hit_at_k"],
-        "avg_ss_reduction_when_hit_at_top_pct": qg_stats["avg_ss_reduction_when_hit_at_top_pct"],
-        "median_ss_reduction_when_hit_at_top_pct": qg_stats["median_ss_reduction_when_hit_at_top_pct"],
-        "avg_ss_reduction_when_hit": qg_stats["avg_ss_reduction_when_hit"],
-        "median_ss_reduction_when_hit": qg_stats["median_ss_reduction_when_hit"],
-        "avg_rank_when_hit_at_k": qg_stats["avg_rank_when_hit_at_k"],
-        "median_rank_when_hit_at_k": qg_stats["median_rank_when_hit_at_k"],
-        "n_hit_at_k": qg_stats["n_hit_at_k"],
-        "avg_rank_when_hit_at_top_pct": qg_stats["avg_rank_when_hit_at_top_pct"],
-        "median_rank_when_hit_at_top_pct": qg_stats["median_rank_when_hit_at_top_pct"],
-        "n_hit_at_top_pct": qg_stats["n_hit_at_top_pct"],
-        "avg_rank_when_hit": qg_stats["avg_rank_when_hit"],
-        "median_rank_when_hit": qg_stats["median_rank_when_hit"],
-        "hit_criterion": qg_stats["hit_criterion"],
-    }
 
 
 def per_residue_screen_breakdown(
@@ -470,6 +1159,21 @@ def print_cov_screen_results(
         "n_hit_at_top_pct",
         summary["n_query_groups"],
     ))
+    print(_format_ss_when_miss(
+        summary, f"Hit@{k}",
+        "avg_ss_reduction_when_miss_at_k",
+        "median_ss_reduction_when_miss_at_k",
+        "n_miss_at_k",
+        summary["n_query_groups"],
+    ))
+    print(_format_ss_when_miss(
+        summary,
+        f"Hit@{pct_label}",
+        "avg_ss_reduction_when_miss_at_top_pct",
+        "median_ss_reduction_when_miss_at_top_pct",
+        "n_miss_at_top_pct",
+        summary["n_query_groups"],
+    ))
     headline = (
         f"Hit@{pct_label}" if reward_mode == "hit_at_top_pct" else f"Hit@{k}"
     )
@@ -489,6 +1193,14 @@ def print_cov_screen_results(
               f"{100.0 * summary['avg_ss_reduction_when_hit']:.1f}%")
         print(f"    Med SS red. when hit : "
               f"{100.0 * summary['median_ss_reduction_when_hit']:.1f}%")
+    if pd.isna(summary.get("avg_ss_reduction_when_miss")):
+        print("    Avg SS red. when miss: n/a")
+        print("    Med SS red. when miss: n/a")
+    else:
+        print(f"    Avg SS red. when miss: "
+              f"{100.0 * summary['avg_ss_reduction_when_miss']:.1f}%")
+        print(f"    Med SS red. when miss: "
+              f"{100.0 * summary['median_ss_reduction_when_miss']:.1f}%")
 
     print(f"\n  Per Residue Type:")
     per_res = per_residue_screen_breakdown(eval_label_df, eval_qg_df)
@@ -567,12 +1279,28 @@ def predict_scores(
     model,
     model_features: list[str],
     normalize_within_protein: bool = False,
+    model_type: str = "ranker",
 ) -> pd.Series:
+    """
+    Score candidates for ranking / VS.
+
+    Ranker: model.predict(X)
+    Classifier: model.predict_proba(X)[:, 1]  (hit probability)
+    Downstream code always consumes the Series as pred_score.
+    """
     prepared = prepare_inference_features(
         df, model_features, normalize_within_protein=normalize_within_protein
     )
     X = prepared[model_features].values.astype(np.float32)
-    scores = model.predict(X)
+    mtype = (model_type or "ranker").strip().lower()
+    if mtype == "classifier":
+        if not hasattr(model, "predict_proba"):
+            sys.exit(
+                "[ERROR] Bundle model_type=classifier but model has no predict_proba."
+            )
+        scores = model.predict_proba(X)[:, 1]
+    else:
+        scores = model.predict(X)
     return pd.Series(scores, index=df.index, name="pred_score")
 
 
@@ -601,7 +1329,8 @@ def parse_args() -> argparse.Namespace:
         description="Screen/evaluate a saved LGBMRanker on training + labels CSVs",
     )
     p.add_argument("--model", required=True,
-                   help="Path to lgbm_ranker.pkl from Training_Cov_Screen.py")
+                   help="Path to lgbm_ranker.pkl or lgbm_classifier.pkl "
+                        "(bundle may include model_type=ranker|classifier)")
     p.add_argument("--training", required=True,
                    help="Path to candidate/training CSV")
     p.add_argument("--labels", required=True,
@@ -620,6 +1349,10 @@ def parse_args() -> argparse.Namespace:
                    help="When a label lists multiple Frankenstein warheads, require "
                         "every training-matched warhead query group to hit. "
                         "Default: any matched warhead hit counts.")
+    p.add_argument("--strict-warhead-coverage", action="store_true",
+                   help="With --perfect-match, exit with an error if any label site "
+                        "has fewer training-matched warheads than listed in labels. "
+                        "Default: print warnings only.")
     p.add_argument("--export-results", default=None,
                    help="Write per-label metrics CSV (one row per label site)")
     p.add_argument("--export-warhead-accuracy", default=None,
@@ -644,6 +1377,20 @@ def parse_args() -> argparse.Namespace:
                    help="Write per-row prediction scores CSV")
     p.add_argument("--export-summary", default=None,
                    help="Write summary JSON (overall + per-residue)")
+    p.add_argument("--VS", action="store_true",
+                   help="Virtual screening mode: rank ligands over all training sites "
+                        "of --residue. Labels supply Name + warhead only.")
+    p.add_argument("--pred-score", action="store_true",
+                   help="With --VS: rank ligands by mean site pred_score (warhead-mean) "
+                        "and overall avg_pred_score across sites. No intra/inter ranks.")
+    p.add_argument("--residue", default=None,
+                   help="Residue type for --VS ranking (e.g. CYS, SER). Required with --VS.")
+    p.add_argument("--chain", default=None,
+                   help="Optional chain filter for --VS (e.g. A)")
+    p.add_argument("--resnum", default=None,
+                   help="Optional ResNum filter for --VS (e.g. 797)")
+    p.add_argument("--export-vs-results", default=None,
+                   help="Write VS ranking CSV (default: ./vs_results.csv when --VS)")
     return p.parse_args()
 
 
@@ -653,6 +1400,17 @@ def main() -> None:
     bundle = load_model_bundle(args.model)
     model = bundle["model"]
     model_features: list[str] = list(bundle["features"])
+    model_type = str(bundle.get("model_type", "")).strip().lower()
+    if model_type not in ("ranker", "classifier"):
+        cls_name = type(model).__name__
+        if (
+            hasattr(model, "calibrated_classifiers_")
+            or "Classifier" in cls_name
+            or cls_name.startswith("Calibrated")
+        ):
+            model_type = "classifier"
+        else:
+            model_type = "ranker"
 
     k = args.topk if args.topk is not None else int(bundle.get("k", 10))
     reward_mode = args.reward_mode or bundle.get("reward_mode", "hit_at_k")
@@ -669,81 +1427,210 @@ def main() -> None:
         sys.exit("[ERROR] --top-pct must be in (0, 100].")
     if k < 1:
         sys.exit("[ERROR] --topk must be >= 1.")
+    if args.VS and not args.residue:
+        sys.exit("[ERROR] --VS requires --residue (e.g. --residue CYS).")
+    if args.pred_score and not args.VS:
+        sys.exit("[ERROR] --pred-score requires --VS.")
+
+    vs_mode = bool(args.VS)
+    vs_pred_score_mode = bool(args.pred_score)
 
     print("=" * 60)
-    print("  Cov_Screen — LGBMRanker evaluation")
+    print("  Cov_Screen — evaluation"
+          + (" (virtual screening)" if vs_mode else "")
+          + (" [pred_score]" if vs_pred_score_mode else ""))
     print("=" * 60)
     print(f"  Model           : {args.model}")
+    print(f"  Model type      : {model_type}")
     print(f"  Features        : {len(model_features)}")
     print(f"  Reward mode     : {reward_mode}")
     print(f"  Top-K           : {k}")
     print(f"  Top-% threshold : {top_pct:g}%")
     print(f"  Epsilon         : {epsilon}")
-    if args.perfect_match:
+    if vs_mode:
+        vs_filt = f"residue={args.residue.upper()}"
+        if args.chain:
+            vs_filt += f", chain={args.chain.upper()}"
+        if args.resnum is not None:
+            vs_filt += f", resnum={_normalize_resnum(args.resnum)}"
+        print(f"  VS mode         : {vs_filt}")
+        if vs_pred_score_mode:
+            print(
+                "  VS ranking      : mean site pred_score per warhead set; "
+                "overall by avg_pred_score (higher = better)"
+            )
+        else:
+            print(
+                "  VS warheads     : mean intra-protein rank across matched warheads; "
+                "hit from reward threshold on that mean"
+            )
+        if args.perfect_match:
+            if args.strict_warhead_coverage:
+                print("  Warhead coverage: strict (exit if any site is missing warheads)")
+            else:
+                print("  Warhead coverage: warn if any site is missing warheads")
+        print("  VS labels use   : Name + warhead only (target site columns ignored)")
+    elif args.perfect_match:
         print("  Hit counting    : one per label (perfect-match: all matched "
               "warheads must hit when label lists multiple Frankenstein warheads)")
+        if args.strict_warhead_coverage:
+            print("  Warhead coverage: strict (exit if any site is missing warheads)")
+        else:
+            print("  Warhead coverage: warn if any site is missing warheads")
     else:
         print("  Hit counting    : one per label (any matched warhead hit counts)")
 
-    merged = load_and_merge(args.training, args.labels)
+    merged = (
+        load_merged_for_vs(args.training, args.labels)
+        if vs_mode else
+        load_and_merge(args.training, args.labels)
+    )
     n_groups = merged["query_group"].nunique()
     print(f"\n[INFO] Query groups to score: {n_groups:,}")
 
-    label_wh_counts = build_label_warhead_counts(args.labels)
+    label_wh_counts = build_label_warhead_counts(args.labels) if not vs_mode else {}
+    name_wh_counts = build_name_warhead_counts(args.labels) if vs_mode else {}
 
     merged = merged.sort_values("query_group").reset_index(drop=True)
     merged["pred_score"] = predict_scores(
         merged, model, model_features,
         normalize_within_protein=args.normalize_within_protein,
+        model_type=model_type,
     )
 
-    eval_qg_df = evaluate_predictions(
-        merged, "pred_score",
-        k=k,
-        top_pct_threshold=top_pct,
-        reward_mode=reward_mode,
-        epsilon=epsilon,
-    )
+    eval_qg_df = pd.DataFrame()
+    eval_label_df = pd.DataFrame()
+    composition: dict = {}
+    overall: dict = {}
+    per_res: list = []
+    per_warhead_df = pd.DataFrame()
+    per_residue_accuracy_df = pd.DataFrame()
 
-    if eval_qg_df.empty:
-        sys.exit("[ERROR] No query groups could be evaluated.")
+    vs_wide_df = pd.DataFrame()
+    vs_long_df = pd.DataFrame()
 
-    eval_qg_df = enrich_query_group_eval(eval_qg_df, merged)
-    eval_label_df = aggregate_label_eval_rows(
-        eval_qg_df, args.perfect_match, label_wh_counts,
-    )
+    if vs_mode:
+        if vs_pred_score_mode:
+            vs_site_eval = aggregate_vs_site_pred_scores(
+                merged,
+                perfect_match=args.perfect_match,
+                name_wh_counts=name_wh_counts,
+                strict_warhead_coverage=args.strict_warhead_coverage,
+            )
+            vs_site_eval = filter_vs_site_eval(
+                vs_site_eval,
+                args.residue,
+                chain=args.chain,
+                resnum=args.resnum,
+            )
+            n_vs_sites = (
+                vs_site_eval.apply(
+                    lambda r: vs_site_column(r["Residue"], r["ResNum"], r["Chain"]),
+                    axis=1,
+                ).nunique()
+                if not vs_site_eval.empty else 0
+            )
+            print(f"[INFO] VS sites scored ({args.residue.upper()}): {n_vs_sites:,}")
+            vs_wide_df, vs_long_df = build_vs_pred_score_results(
+                vs_site_eval,
+                residue=args.residue,
+                chain=args.chain,
+                resnum=args.resnum,
+            )
+            print_vs_pred_score_results(
+                vs_wide_df,
+                residue=args.residue,
+                chain=args.chain,
+                resnum=args.resnum,
+            )
+        else:
+            vs_site_eval = build_vs_site_eval_from_merged(
+                merged,
+                score_col="pred_score",
+                residue=args.residue,
+                k=k,
+                top_pct_threshold=top_pct,
+                perfect_match=args.perfect_match,
+                name_wh_counts=name_wh_counts,
+                chain=args.chain,
+                resnum=args.resnum,
+                strict_warhead_coverage=args.strict_warhead_coverage,
+            )
+            n_vs_sites = (
+                vs_site_eval.apply(
+                    lambda r: vs_site_column(r["Residue"], r["ResNum"], r["Chain"]),
+                    axis=1,
+                ).nunique()
+                if not vs_site_eval.empty else 0
+            )
+            print(f"[INFO] VS sites ranked ({args.residue.upper()}): {n_vs_sites:,}")
+            vs_wide_df, vs_long_df = build_vs_results(
+                vs_site_eval,
+                residue=args.residue,
+                reward_mode=reward_mode,
+                chain=args.chain,
+                resnum=args.resnum,
+            )
+            print_vs_results(
+                vs_wide_df,
+                residue=args.residue,
+                reward_mode=reward_mode,
+                chain=args.chain,
+                resnum=args.resnum,
+            )
+        if vs_wide_df.empty:
+            print("[WARN] VS ranking produced no rows — check --residue/--chain/--resnum.")
+    else:
+        eval_qg_df = evaluate_predictions(
+            merged, "pred_score",
+            k=k,
+            top_pct_threshold=top_pct,
+            reward_mode=reward_mode,
+            epsilon=epsilon,
+        )
 
-    if eval_label_df.empty:
-        sys.exit("[ERROR] No labels could be aggregated for evaluation.")
+        if eval_qg_df.empty:
+            sys.exit("[ERROR] No query groups could be evaluated.")
 
-    print(f"[INFO] Labels evaluated (one row per site): {len(eval_label_df):,}")
-    print(f"[INFO] Query groups in rank/SS averages : {len(eval_qg_df):,}")
+        eval_qg_df = enrich_query_group_eval(eval_qg_df, merged)
+        eval_label_df = aggregate_label_eval_rows(
+            eval_qg_df,
+            args.perfect_match,
+            label_wh_counts,
+            strict_warhead_coverage=args.strict_warhead_coverage,
+        )
 
-    print_cov_screen_results(
-        eval_label_df, eval_qg_df,
-        k=k, top_pct_threshold=top_pct,
-        reward_mode=reward_mode, epsilon=epsilon,
-        split_name="Evaluation",
-    )
+        if eval_label_df.empty:
+            sys.exit("[ERROR] No labels could be aggregated for evaluation.")
 
-    composition = analyze_residue_composition(
-        merged, "pred_score", k=k, top_pct_threshold=top_pct,
-    )
-    print_residue_composition(composition, k=k, top_pct_threshold=top_pct)
+        print(f"[INFO] Labels evaluated (one row per site): {len(eval_label_df):,}")
+        print(f"[INFO] Query groups in rank/SS averages : {len(eval_qg_df):,}")
 
-    overall = summarize_screen_metrics(
-        eval_label_df, eval_qg_df, k, top_pct, reward_mode, epsilon,
-    )
-    per_res = per_residue_screen_breakdown(eval_label_df, eval_qg_df).to_dict(
-        orient="records"
-    )
-    per_warhead_df = per_warhead_screen_breakdown(eval_qg_df, reward_mode)
-    per_residue_accuracy_df = per_residue_accuracy_breakdown(
-        eval_qg_df, eval_label_df, reward_mode,
-    )
+        print_cov_screen_results(
+            eval_label_df, eval_qg_df,
+            k=k, top_pct_threshold=top_pct,
+            reward_mode=reward_mode, epsilon=epsilon,
+            split_name="Evaluation",
+        )
+
+        composition = analyze_residue_composition(
+            merged, "pred_score", k=k, top_pct_threshold=top_pct,
+        )
+        print_residue_composition(composition, k=k, top_pct_threshold=top_pct)
+
+        overall = summarize_screen_metrics(
+            eval_label_df, eval_qg_df, k, top_pct, reward_mode, epsilon,
+        )
+        per_res = per_residue_screen_breakdown(eval_label_df, eval_qg_df).to_dict(
+            orient="records"
+        )
+        per_warhead_df = per_warhead_screen_breakdown(eval_qg_df, reward_mode)
+        per_residue_accuracy_df = per_residue_accuracy_breakdown(
+            eval_qg_df, eval_label_df, reward_mode,
+        )
 
     shap_global_df = pd.DataFrame()
-    run_shap = not args.no_shap and (
+    run_shap = not vs_mode and not args.no_shap and (
         args.export_shap is not None or args.export_results is not None
     )
     if run_shap:
@@ -770,6 +1657,7 @@ def main() -> None:
 
     summary = {
         "model": str(Path(args.model).resolve()),
+        "model_type": model_type,
         "training": str(Path(args.training).resolve()),
         "labels": str(Path(args.labels).resolve()),
         "k": k,
@@ -777,7 +1665,8 @@ def main() -> None:
         "reward_mode": reward_mode,
         "rank_bonus_epsilon": epsilon,
         "perfect_match": args.perfect_match,
-        "n_query_groups": int(len(eval_qg_df)),
+        "mode": "vs_pred_score" if vs_pred_score_mode else ("vs" if vs_mode else "eval"),
+        "n_query_groups": int(n_groups if vs_mode else len(eval_qg_df)),
         "n_labels": int(len(eval_label_df)),
         "overall": overall,
         "per_residue": per_res,
@@ -790,10 +1679,39 @@ def main() -> None:
         summary["residue_composition"] = {
             k_: v for k_, v in composition.items() if k_ != "detail"
         }
+    if vs_mode and not vs_wide_df.empty:
+        vs_summary: dict = {
+            "residue": str(args.residue).upper(),
+            "chain": str(args.chain).upper() if args.chain else None,
+            "resnum": _normalize_resnum(args.resnum) if args.resnum is not None else None,
+            "n_ligands": int(len(vs_wide_df)),
+            "rankings": vs_wide_df.to_dict(orient="records"),
+        }
+        if vs_pred_score_mode:
+            vs_summary["ranking_metric"] = "avg_pred_score"
+            vs_summary["site_metric"] = "mean_pred_score_per_warhead"
+        else:
+            vs_summary["hit_criterion"] = _active_hit_column(reward_mode)
+        summary["vs"] = vs_summary
+
+    vs_export_path = args.export_vs_results
+    if vs_mode and vs_export_path is None:
+        vs_export_path = (
+            "./vs_pred_score_results.csv" if vs_pred_score_mode else "./vs_results.csv"
+        )
+    if vs_mode and vs_export_path:
+        if vs_wide_df.empty:
+            print("[WARN] No VS results to export.")
+        else:
+            vs_wide_df.to_csv(vs_export_path, index=False)
+            print(f"[INFO] VS rankings exported → {vs_export_path}")
 
     if args.export_results:
-        eval_label_df.to_csv(args.export_results, index=False)
-        print(f"[INFO] Per-label metrics exported → {args.export_results}")
+        if vs_mode:
+            print("[WARN] --export-results is label-eval output; skipped in --VS mode.")
+        else:
+            eval_label_df.to_csv(args.export_results, index=False)
+            print(f"[INFO] Per-label metrics exported → {args.export_results}")
 
     warhead_path = args.export_warhead_accuracy
     if warhead_path is None and args.export_results:
@@ -831,6 +1749,8 @@ def main() -> None:
         print(f"[INFO] Residue composition detail → {comp_path}")
 
     if args.export_scores:
+        if vs_mode:
+            print("[INFO] Exporting scores (--export-scores) in --VS mode.")
         export_scores_csv(merged, args.export_scores)
 
     if args.export_summary:

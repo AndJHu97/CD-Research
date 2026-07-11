@@ -47,10 +47,12 @@ _FRANKENSTEIN_TO_RAW: Dict[str, List[str]] = {
     # --- Michael acceptors ---
     "Alpha-beta unsaturated carbonyl (Michael acceptor)": [
         "Michael Acceptor", "Michael acceptor",  # both casings
+        "Acrylamide", "Acrylamides",
         "Vinyl Nitroalkane", "Enamine",
     ],
     "Acrylamide warhead": [
         "Michael Acceptor", "Michael acceptor",
+        "Acrylamide", "Acrylamides",
     ],
     "Propiolamide warhead": [
         "Alkyne", "Alkynyl", "Michael Acceptor", "Michael acceptor",
@@ -102,6 +104,7 @@ _FRANKENSTEIN_TO_RAW: Dict[str, List[str]] = {
     # --- Alpha-halo carbonyls ---
     "Alpha-halo carbonyl": [
         "Halohydrocarbon", "Diazomethyl Carbonyl", "Diazo",
+        "Chloroacetamide", "Chloroacetamides",
     ],
  
     # --- Alkyl / aryl halides ---
@@ -112,6 +115,7 @@ _FRANKENSTEIN_TO_RAW: Dict[str, List[str]] = {
     "Alkyl chloride": [
         "Halohydrocarbon",
         "Nucleophilic substitution warhead",
+        "Chloroacetamide", "Chloroacetamides",
     ],
     "Alkyl halide (Cl,Br,I)": [
         "Halohydrocarbon",

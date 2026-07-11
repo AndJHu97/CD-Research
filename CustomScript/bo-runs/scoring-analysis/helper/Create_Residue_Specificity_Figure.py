@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""Create a three-panel residue-type specificity figure (Panels A–C).
+"""Create a four-panel residue-type specificity figure (Panels A–D).
 
 Panel A: Top-10% shortlist composition (true target × residue type in shortlist).
 Panel B: Top-10% enrichment vs candidate pool (top_pct_frac / base_frac per residue).
 Panel C: Rank-1 type prediction (true target × rank-1 predicted type).
+Panel D: Per-residue test accuracy table from summary JSON.
 
 Usage:
     python helper/Create_Residue_Specificity_Figure.py \
         --residue-composition residue_composition_detail.csv \
+        --summary normal_summary.json \
         [--output residue_specificity.png]
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import matplotlib.cm as cm
@@ -33,11 +36,30 @@ RESIDUE_LABELS = {
 }
 # Square heatmap cells: side length in inches (6×6 grid per panel).
 CELL_SIZE_IN = 0.58
+COLORBAR_PAD_IN = 0.12
 COLORBAR_WIDTH_IN = 0.22
-PANEL_GAP_IN = 0.55
-LEFT_MARGIN_IN = 1.05
-BOTTOM_MARGIN_IN = 1.35
-TOP_MARGIN_IN = 0.55
+COLORBAR_LABEL_IN = 0.55
+# Gap between left-column colorbar and right-column panels (room for B y-labels).
+COLUMN_GAP_IN = 2.15
+ROW_GAP_IN = 0.75
+ROW_XLABEL_CLEARANCE_IN = 0.55
+LEFT_MARGIN_IN = 1.15
+BOTTOM_MARGIN_IN = 1.45
+TOP_MARGIN_IN = 0.65
+RIGHT_MARGIN_IN = 0.25
+
+TABLE_HEADERS = (
+    "Residue",
+    "Groups",
+    "Labels",
+    "Hit @\ntop 10%",
+    "Median\nrank",
+    "Median SS\nred.",
+    "SS red.\n(hit)",
+    "SS red.\n(miss)",
+)
+# Relative column widths (must sum to 1.0).
+TABLE_COL_WIDTHS = (0.09, 0.09, 0.09, 0.12, 0.10, 0.14, 0.15, 0.15)
 
 
 def _panel_title(ax: plt.Axes, panel_label: str, title: str) -> None:
@@ -78,6 +100,103 @@ def load_residue_composition(csv_path: Path) -> pd.DataFrame:
         df[f"enrichment_{res}"] = np.where(base_frac > 0, top_frac / base_frac, np.nan)
 
     return df
+
+
+def _accuracy_table_row(
+    *,
+    residue: str,
+    n_query_groups: int,
+    n_labels: int,
+    hit_rate_at_top_pct: float,
+    median_rank: float,
+    median_ss_reduction: float,
+    median_ss_reduction_when_hit: float,
+    median_ss_reduction_when_miss: float | None,
+) -> dict[str, object]:
+    return {
+        "Residue": residue,
+        "query groups": n_query_groups,
+        "number of labels": n_labels,
+        "Top 10% Hit Rate": hit_rate_at_top_pct,
+        "Median Rank": median_rank,
+        "Median SS Reduction": median_ss_reduction,
+        "Median SS Reduction (hit)": median_ss_reduction_when_hit,
+        "Median SS Reduction (miss)": median_ss_reduction_when_miss,
+    }
+
+
+def load_per_residue_accuracy(summary_path: Path) -> pd.DataFrame:
+    with summary_path.open(encoding="utf-8") as handle:
+        payload = json.load(handle)
+
+    records = payload.get("test_per_residue_accuracy")
+    if not records:
+        raise ValueError(f"{summary_path}: missing test_per_residue_accuracy")
+
+    overall = payload.get("test_overall")
+    if not overall:
+        raise ValueError(f"{summary_path}: missing test_overall")
+
+    by_type = {
+        str(row["target_residue_type"]).strip().upper(): row for row in records
+    }
+    rows: list[dict[str, object]] = []
+    for res in RESIDUE_TYPES:
+        if res not in by_type:
+            continue
+        row = by_type[res]
+        if "label_hit_rate_at_top_pct" not in row:
+            raise ValueError(
+                f"{summary_path}: missing label_hit_rate_at_top_pct for {res}. "
+                "Re-run Training_Cov_Screen.py to regenerate the summary JSON."
+            )
+        miss_ss = row.get("median_ss_reduction_when_miss")
+        rows.append(
+            _accuracy_table_row(
+                residue=RESIDUE_LABELS[res],
+                n_query_groups=int(row["n_query_groups"]),
+                n_labels=int(row["n_labels"]),
+                hit_rate_at_top_pct=float(row["label_hit_rate_at_top_pct"]),
+                median_rank=float(row["median_rank"]),
+                median_ss_reduction=float(row["median_ss_reduction"]),
+                median_ss_reduction_when_hit=float(row["median_ss_reduction_when_hit"]),
+                median_ss_reduction_when_miss=(
+                    float(miss_ss)
+                    if miss_ss is not None and np.isfinite(float(miss_ss))
+                    else None
+                ),
+            )
+        )
+    if not rows:
+        raise ValueError(f"{summary_path}: no recognized residue types in test_per_residue_accuracy")
+
+    residue_df = pd.DataFrame(rows).sort_values(
+        "Top 10% Hit Rate",
+        ascending=False,
+        kind="stable",
+    )
+
+    miss_ss = overall.get("median_ss_reduction_when_miss")
+    overall_row = _accuracy_table_row(
+        residue="Overall",
+        n_query_groups=int(overall["n_query_groups"]),
+        n_labels=int(overall["n_labels"]),
+        hit_rate_at_top_pct=float(overall["hit_at_top_pct"]),
+        median_rank=float(overall["median_rank"]),
+        median_ss_reduction=float(overall["median_search_space_reduction"]),
+        median_ss_reduction_when_hit=float(
+            overall["median_ss_reduction_when_hit_at_top_pct"]
+        ),
+        median_ss_reduction_when_miss=(
+            float(miss_ss)
+            if miss_ss is not None and np.isfinite(float(miss_ss))
+            else None
+        ),
+    )
+    return pd.concat(
+        [residue_df, pd.DataFrame([overall_row])],
+        ignore_index=True,
+    )
 
 
 def _mean_matrix_by_label(
@@ -187,25 +306,21 @@ def _style_heatmap_axes(
     xlabel: str,
     panel_label: str,
     title: str,
-    subtitle: str,
+    show_row_labels: bool,
 ) -> None:
     n = len(RESIDUE_TYPES)
     ax.set_xticks(range(n))
     ax.set_xticklabels(col_labels, fontsize=8)
     ax.set_yticks(range(n))
-    ax.set_yticklabels(row_labels, fontsize=8)
-    ax.set_ylabel("True target type")
+    if show_row_labels:
+        ax.set_yticklabels(row_labels, fontsize=8)
+        if panel_label in ("A", "C"):
+            ax.set_ylabel("True target type")
+    else:
+        ax.set_yticklabels([])
+        ax.tick_params(axis="y", length=0)
     ax.set_xlabel(xlabel)
     _panel_title(ax, panel_label, title)
-    ax.text(
-        0.0,
-        -0.18,
-        subtitle,
-        transform=ax.transAxes,
-        fontsize=7,
-        color="#555555",
-        va="top",
-    )
 
 
 def plot_residue_specificity_panels(
@@ -248,7 +363,6 @@ def plot_residue_specificity_panels(
             frac_norm,
             "A",
             "Top-10% shortlist composition",
-            "Mean per-protein top-10% type fractions, averaged within true-target group",
             "Residue type in shortlist",
             "fraction",
         ),
@@ -259,7 +373,6 @@ def plot_residue_specificity_panels(
             enrich_norm,
             "B",
             "Top-10% enrichment",
-            "Mean per-protein enrichment (top-10% fraction / candidate-pool fraction)",
             "Residue type",
             "enrichment",
         ),
@@ -270,7 +383,6 @@ def plot_residue_specificity_panels(
             frac_norm,
             "C",
             "Rank-1 type prediction",
-            "Fraction of query groups per true-target type with each rank-1 type",
             "Rank-1 predicted type",
             "fraction",
         ),
@@ -279,7 +391,7 @@ def plot_residue_specificity_panels(
     n_types = len(RESIDUE_TYPES)
     heatmap_extent = (-0.5, n_types - 0.5, n_types - 0.5, -0.5)
 
-    for ax, matrix, cmap, norm, panel_label, title, subtitle, xlabel, mode in panels:
+    for ax, matrix, cmap, norm, panel_label, title, xlabel, mode in panels:
         display = matrix * 100.0 if mode == "fraction" else matrix
         ax.imshow(
             display,
@@ -305,7 +417,7 @@ def plot_residue_specificity_panels(
             xlabel=xlabel,
             panel_label=panel_label,
             title=title,
-            subtitle=subtitle,
+            show_row_labels=panel_label in ("A", "B", "C"),
         )
 
     colorbars = (
@@ -319,7 +431,7 @@ def plot_residue_specificity_panels(
         heat_pos = ax.get_position()
         cax = fig.add_axes(
             [
-                heat_pos.x1 + 0.012,
+                heat_pos.x1 + COLORBAR_PAD_IN / fig.get_figwidth(),
                 heat_pos.y0 + heat_pos.height * 0.07,
                 COLORBAR_WIDTH_IN / fig.get_figwidth(),
                 heat_pos.height * 0.86,
@@ -330,43 +442,150 @@ def plot_residue_specificity_panels(
         cbar.ax.tick_params(labelsize=7)
 
 
-def _add_square_heatmap_axes(fig: plt.Figure, panel_index: int) -> plt.Axes:
-    """Place a square 6×6 heatmap axes; width matches height (square cells)."""
+def _format_table_cell(column: str, value: object) -> str:
+    if value is None:
+        return "—"
+    if isinstance(value, float) and not np.isfinite(value):
+        return "—"
+    if column == "Residue":
+        return str(value)
+    if column == "Top 10% Hit Rate":
+        return f"{float(value) * 100:.1f}%"
+    if column == "Median Rank":
+        number = float(value)
+        return f"{number:.0f}" if number.is_integer() else f"{number:.1f}"
+    if column.startswith("Median SS"):
+        return f"{float(value):.3f}"
+    if column in ("query groups", "number of labels"):
+        return str(int(value))
+    return str(value)
+
+
+def plot_residue_accuracy_table(
+    ax: plt.Axes,
+    accuracy_df: pd.DataFrame,
+) -> None:
+    ax.axis("off")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    _panel_title(ax, "D", "Per-residue test accuracy")
+
+    display_cols = list(accuracy_df.columns)
+    cell_text = [
+        [_format_table_cell(col, row[col]) for col in display_cols]
+        for _, row in accuracy_df.iterrows()
+    ]
+
+    table = ax.table(
+        cellText=cell_text,
+        colLabels=TABLE_HEADERS,
+        colWidths=TABLE_COL_WIDTHS,
+        loc="upper center",
+        bbox=[0.0, 0.0, 1.0, 0.84],
+        cellLoc="center",
+    )
+    table.auto_set_font_size(False)
+
+    n_data_rows = len(accuracy_df)
+    body_height = min(0.11, 0.78 / max(n_data_rows, 1))
+    header_height = min(0.26, 0.22 + 0.01 * max(0, 7 - n_data_rows))
+
+    for (row_idx, col_idx), cell in table.get_celld().items():
+        cell.set_edgecolor("#cccccc")
+        cell.set_linewidth(0.6)
+        if row_idx == 0:
+            cell.set_facecolor("#e8eef5")
+            cell.set_height(header_height)
+            cell.set_text_props(fontweight="bold", fontsize=6.0, ha="center", va="center")
+            continue
+
+        is_overall = str(accuracy_df.iloc[row_idx - 1]["Residue"]) == "Overall"
+        cell.set_height(body_height)
+        if is_overall:
+            cell.set_facecolor("#eef1f5")
+            weight = "bold"
+        else:
+            cell.set_facecolor("white")
+            weight = "bold" if col_idx == 0 else "normal"
+        cell.set_text_props(fontsize=7, fontweight=weight, ha="center", va="center")
+
+
+def _layout_metrics() -> tuple[float, float, float]:
+    """Return heatmap side, column stride, and right-column content width."""
     n_types = len(RESIDUE_TYPES)
     heatmap_in = n_types * CELL_SIZE_IN
-    panel_stride_in = heatmap_in + COLORBAR_WIDTH_IN + PANEL_GAP_IN
-    left_in = LEFT_MARGIN_IN + panel_index * panel_stride_in
+    panel_content_in = (
+        heatmap_in + COLORBAR_PAD_IN + COLORBAR_WIDTH_IN + COLORBAR_LABEL_IN
+    )
+    column_stride_in = panel_content_in + COLUMN_GAP_IN
+    return heatmap_in, column_stride_in, panel_content_in
+
+
+def _row_bottom_in(row: int, heatmap_in: float) -> float:
+    if row == 0:
+        return BOTTOM_MARGIN_IN + heatmap_in + ROW_GAP_IN + ROW_XLABEL_CLEARANCE_IN
+    return BOTTOM_MARGIN_IN
+
+
+def _add_square_heatmap_axes(fig: plt.Figure, row: int, col: int) -> plt.Axes:
+    """Place a square 6×6 heatmap axes; width matches height (square cells)."""
+    heatmap_in, column_stride_in, _ = _layout_metrics()
+    left_in = LEFT_MARGIN_IN + col * column_stride_in
+    bottom_in = _row_bottom_in(row, heatmap_in)
     fig_w, fig_h = fig.get_size_inches()
-    ax = fig.add_axes(
+    return fig.add_axes(
         [
             left_in / fig_w,
-            BOTTOM_MARGIN_IN / fig_h,
+            bottom_in / fig_h,
             heatmap_in / fig_w,
             heatmap_in / fig_h,
         ]
     )
-    return ax
+
+
+def _add_table_axes(fig: plt.Figure) -> plt.Axes:
+    """Place panel D table in the bottom-right grid cell."""
+    heatmap_in, column_stride_in, panel_content_in = _layout_metrics()
+    left_in = LEFT_MARGIN_IN + column_stride_in
+    bottom_in = _row_bottom_in(1, heatmap_in)
+    fig_w, fig_h = fig.get_size_inches()
+    return fig.add_axes(
+        [
+            left_in / fig_w,
+            bottom_in / fig_h,
+            panel_content_in / fig_w,
+            heatmap_in / fig_h,
+        ]
+    )
 
 
 def create_figure(
     *,
     residue_composition: Path,
+    summary_path: Path,
     output_path: Path,
 ) -> None:
     composition_df = load_residue_composition(residue_composition)
+    accuracy_df = load_per_residue_accuracy(summary_path)
 
-    n_types = len(RESIDUE_TYPES)
-    heatmap_in = n_types * CELL_SIZE_IN
-    panel_stride_in = heatmap_in + COLORBAR_WIDTH_IN + PANEL_GAP_IN
-    fig_w = LEFT_MARGIN_IN + 3 * panel_stride_in + 0.25
-    fig_h = BOTTOM_MARGIN_IN + heatmap_in + TOP_MARGIN_IN
+    heatmap_in, column_stride_in, panel_content_in = _layout_metrics()
+    fig_w = LEFT_MARGIN_IN + column_stride_in + panel_content_in + RIGHT_MARGIN_IN
+    fig_h = (
+        BOTTOM_MARGIN_IN
+        + 2 * heatmap_in
+        + ROW_GAP_IN
+        + ROW_XLABEL_CLEARANCE_IN
+        + TOP_MARGIN_IN
+    )
 
     fig = plt.figure(figsize=(fig_w, fig_h))
-    ax_a = _add_square_heatmap_axes(fig, 0)
-    ax_b = _add_square_heatmap_axes(fig, 1)
-    ax_c = _add_square_heatmap_axes(fig, 2)
+    ax_a = _add_square_heatmap_axes(fig, row=0, col=0)
+    ax_b = _add_square_heatmap_axes(fig, row=0, col=1)
+    ax_c = _add_square_heatmap_axes(fig, row=1, col=0)
+    ax_d = _add_table_axes(fig)
 
     plot_residue_specificity_panels(fig, ax_a, ax_b, ax_c, composition_df)
+    plot_residue_accuracy_table(ax_d, accuracy_df)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=300, facecolor="white")
@@ -379,13 +598,22 @@ def parse_args() -> argparse.Namespace:
     analysis_dir = here.parent
 
     p = argparse.ArgumentParser(
-        description="Create residue-type specificity figure (composition, enrichment, rank-1)."
+        description=(
+            "Create residue-type specificity figure "
+            "(composition, enrichment, rank-1, per-residue accuracy table)."
+        )
     )
     p.add_argument(
         "--residue-composition",
         type=Path,
         default=analysis_dir / "residue_composition_detail.csv",
         help="Per-query-group residue composition CSV from Training_Cov_Screen.py.",
+    )
+    p.add_argument(
+        "--summary",
+        type=Path,
+        default=analysis_dir / "normal_summary.json",
+        help="Model summary JSON with test_per_residue_accuracy (default: normal_summary.json).",
     )
     p.add_argument(
         "--output",
@@ -400,9 +628,12 @@ def main() -> None:
     args = parse_args()
     if not args.residue_composition.is_file():
         raise FileNotFoundError(f"Required input not found: {args.residue_composition}")
+    if not args.summary.is_file():
+        raise FileNotFoundError(f"Required input not found: {args.summary}")
 
     create_figure(
         residue_composition=args.residue_composition,
+        summary_path=args.summary,
         output_path=args.output,
     )
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Create a four-panel model-validity figure (Panels A–D).
 
-Panel A: Feature-ablation dumbbell chart — hit rate @ top 10% (test).
-Panel B: Feature-ablation dumbbell chart — NDCG@K (test).
+Panel A: Feature-ablation dumbbell chart — hit rate @ top 10% (test) with 95% Wilson CI.
+Panel B: Feature-ablation dumbbell chart — NDCG@K (test) with 95% bootstrap CI
+         (query-group rows when available, else CV fold SEM).
 Panel C: SHAP beeswarm for physicochemical descriptors (residue one-hots omitted).
 Panel D: CV fold distribution vs held-out test hit rate @ top 10%.
 
@@ -66,6 +67,12 @@ CV_BOX_COLOR = "#4C72B0"
 TEST_MARKER_COLOR = "#D62728"
 FIG_WIDTH = 14.85
 FIG_HEIGHT = 11.0
+DEFAULT_CI_LEVEL = 0.95
+_BOOTSTRAP_DRAWS = 2000
+_T_CRIT_95 = {
+    1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571,
+    6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228,
+}
 
 
 def _panel_title(ax: plt.Axes, panel_label: str, title: str) -> None:
@@ -94,6 +101,133 @@ def load_hit_at_top_pct(summary_path: Path) -> float:
 
 def load_ndcg(summary_path: Path) -> float:
     return load_test_metric(summary_path, "ndcg")
+
+
+def _t_critical(df: int, alpha: float) -> float:
+    if df <= 0:
+        return 1.96
+    if abs(alpha - 0.05) < 1e-9 and df in _T_CRIT_95:
+        return _T_CRIT_95[df]
+    return 1.96
+
+
+def wilson_ci(successes: int, n: int, alpha: float = DEFAULT_CI_LEVEL) -> tuple[float, float]:
+    """Wilson score interval for a binomial proportion."""
+    if n <= 0:
+        return (0.0, 0.0)
+    z = 1.959963984540054 if abs(alpha - 0.05) < 1e-9 else 1.96
+    p = successes / n
+    z2 = z * z
+    denom = 1.0 + z2 / n
+    center = (p + z2 / (2.0 * n)) / denom
+    margin = z * np.sqrt((p * (1.0 - p) + z2 / (4.0 * n)) / n) / denom
+    return (max(0.0, center - margin), min(1.0, center + margin))
+
+
+def load_hit_rate_ci(summary_path: Path, alpha: float = DEFAULT_CI_LEVEL) -> tuple[float, float]:
+    test = load_test_overall(summary_path)
+    n_labels = int(test.get("n_labels", 0))
+    if n_labels <= 0:
+        return (float(test["hit_at_top_pct"]), float(test["hit_at_top_pct"]))
+    successes = int(round(float(test["hit_at_top_pct"]) * n_labels))
+    successes = min(max(successes, 0), n_labels)
+    return wilson_ci(successes, n_labels, alpha=alpha)
+
+
+def _cv_fold_values(summary_path: Path, metric: str) -> np.ndarray:
+    with summary_path.open(encoding="utf-8") as fh:
+        data = json.load(fh)
+    values: list[float] = []
+    for row in data.get("cv_folds", []):
+        fold = str(row.get("fold", "")).strip().lower()
+        if fold in {"mean", "avg", "average"}:
+            continue
+        if metric not in row:
+            continue
+        values.append(float(row[metric]))
+    return np.asarray(values, dtype=float)
+
+
+def resolve_test_query_groups(summary_path: Path) -> Path | None:
+    stem = summary_path.stem
+    if stem.endswith("_summary"):
+        stem = stem[: -len("_summary")]
+    candidates = [
+        summary_path.with_name(f"{stem}_test_query_groups.csv"),
+        summary_path.with_name(f"{stem}_test_results.csv"),
+        summary_path.parent / "test_query_groups.csv",
+        summary_path.parent / "test_results.csv",
+    ]
+    for path in candidates:
+        if path.is_file():
+            return path
+    return None
+
+
+def _bootstrap_mean_ci(
+    values: np.ndarray,
+    *,
+    alpha: float = DEFAULT_CI_LEVEL,
+    seed: int = 42,
+    n_draws: int = _BOOTSTRAP_DRAWS,
+) -> tuple[float, float]:
+    if values.size == 0:
+        return (float("nan"), float("nan"))
+    if values.size == 1:
+        v = float(values[0])
+        return (v, v)
+    rng = np.random.default_rng(seed)
+    boots = np.empty(n_draws, dtype=float)
+    for i in range(n_draws):
+        sample = rng.choice(values, size=values.size, replace=True)
+        boots[i] = sample.mean()
+    lo = float(np.percentile(boots, 100.0 * alpha / 2.0))
+    hi = float(np.percentile(boots, 100.0 * (1.0 - alpha / 2.0)))
+    return (lo, hi)
+
+
+def load_ndcg_ci(
+    summary_path: Path,
+    *,
+    alpha: float = DEFAULT_CI_LEVEL,
+    seed: int = 42,
+) -> tuple[float, float, str]:
+    """
+    Return (lo, hi, method) for test NDCG.
+
+    Prefer bootstrap over per-query-group test rows; fall back to CV fold SEM
+  centered on the held-out test NDCG when query-group exports are unavailable.
+    """
+    test_ndcg = load_ndcg(summary_path)
+    qg_path = resolve_test_query_groups(summary_path)
+    if qg_path is not None:
+        df = pd.read_csv(qg_path)
+        if "ndcg_at_k" in df.columns:
+            lo, hi = _bootstrap_mean_ci(
+                df["ndcg_at_k"].astype(float).to_numpy(),
+                alpha=alpha,
+                seed=seed,
+            )
+            return (lo, hi, "bootstrap (query groups)")
+        if "ndcg" in df.columns:
+            lo, hi = _bootstrap_mean_ci(
+                df["ndcg"].astype(float).to_numpy(),
+                alpha=alpha,
+                seed=seed,
+            )
+            return (lo, hi, "bootstrap (query groups)")
+
+    fold_vals = _cv_fold_values(summary_path, "ndcg")
+    if fold_vals.size >= 2:
+        df = int(fold_vals.size - 1)
+        hw = _t_critical(df, alpha) * float(fold_vals.std(ddof=1)) / np.sqrt(fold_vals.size)
+        return (
+            max(0.0, test_ndcg - hw),
+            min(1.0, test_ndcg + hw),
+            "CV fold SEM",
+        )
+
+    return (test_ndcg, test_ndcg, "point estimate")
 
 
 def parse_ablation_arg(spec: str) -> tuple[str, Path]:
@@ -148,6 +282,91 @@ def _order_ablations(
     return [ablations[i] for i in order]
 
 
+def _test_set_shape(summary_path: Path) -> tuple[int, int]:
+    test = load_test_overall(summary_path)
+    return int(test.get("n_labels", 0)), int(test.get("n_query_groups", 0))
+
+
+def _intervals_overlap(lo_a: float, hi_a: float, lo_b: float, hi_b: float) -> bool:
+    return not (hi_a < lo_b or hi_b < lo_a)
+
+
+def report_ablation_comparability(
+    *,
+    full_summary: Path,
+    ablation_paths: list[tuple[str, Path]],
+    full_hit_ci: tuple[float, float],
+    full_ndcg_ci: tuple[float, float],
+    ablation_hit_cis: dict[str, tuple[float, float]],
+    ablation_ndcg_cis: dict[str, tuple[float, float]],
+) -> None:
+    """Warn when ablation summaries use a different test set than the full model."""
+    full_labels, full_qg = _test_set_shape(full_summary)
+    mismatches: list[str] = []
+    for label, path in ablation_paths:
+        if not path.is_file():
+            continue
+        n_labels, n_qg = _test_set_shape(path)
+        if n_labels != full_labels or n_qg != full_qg:
+            mismatches.append(
+                f"    {label}: n_labels={n_labels}, n_query_groups={n_qg} "
+                f"(full model: {full_labels}, {full_qg})"
+            )
+
+    if mismatches:
+        print(
+            "\n[WARN] Ablation summaries do not all use the same held-out test set "
+            "as the full model. Point estimates and Wilson CIs are not strictly "
+            "paired-comparable until all runs share identical cluster splits and "
+            "label/query-group counts.\n"
+            + "\n".join(mismatches)
+        )
+    else:
+        print(
+            f"\n  Test-set check: all ablations match full model "
+            f"(n_labels={full_labels}, n_query_groups={full_qg})."
+        )
+
+    print("\n  95% CI overlap with full model (non-overlap ⇒ statistically separable "
+          "under each CI's assumptions):")
+    for label, path in ablation_paths:
+        if label not in ablation_hit_cis:
+            continue
+        hit_lo, hit_hi = ablation_hit_cis[label]
+        nd_lo, nd_hi = ablation_ndcg_cis[label]
+        hit_ov = _intervals_overlap(*full_hit_ci, hit_lo, hit_hi)
+        nd_ov = _intervals_overlap(*full_ndcg_ci, nd_lo, nd_hi)
+        print(
+            f"    {label}: hit@top10% overlap={hit_ov}, NDCG overlap={nd_ov}"
+        )
+
+
+def _plot_xerr(
+    ax: plt.Axes,
+    center: float,
+    y: float,
+    lo: float,
+    hi: float,
+    *,
+    color: str,
+) -> None:
+    if not np.isfinite(lo) or not np.isfinite(hi):
+        return
+    if hi <= lo:
+        return
+    ax.errorbar(
+        center,
+        y,
+        xerr=[[center - lo], [hi - center]],
+        fmt="none",
+        ecolor=color,
+        elinewidth=1.2,
+        capsize=2.5,
+        capthick=1.0,
+        zorder=2,
+    )
+
+
 def plot_ablation_dumbbell(
     ax: plt.Axes,
     full_value: float,
@@ -158,6 +377,9 @@ def plot_ablation_dumbbell(
     xlabel: str,
     as_percent: bool = False,
     show_y_labels: bool = True,
+    full_ci: tuple[float, float] | None = None,
+    ablation_cis: list[tuple[float, float] | None] | None = None,
+    ci_note: str | None = None,
 ) -> None:
     """Horizontal dumbbell: full model (left) → ablated (right) per feature group."""
     if not ablations:
@@ -184,8 +406,13 @@ def plot_ablation_dumbbell(
     scale = 100.0 if as_percent else 1.0
     full_scaled = full_value * scale
     ablated_scaled = [v * scale for v in ablated_values]
+    if ablation_cis is None:
+        ablation_cis = [None] * len(ablated_scaled)
+    full_lo = full_hi = None
+    if full_ci is not None:
+        full_lo, full_hi = (full_ci[0] * scale, full_ci[1] * scale)
 
-    for yi, abl in zip(y_pos, ablated_scaled):
+    for yi, abl, ci in zip(y_pos, ablated_scaled, ablation_cis):
         ax.plot(
             [full_scaled, abl],
             [yi, yi],
@@ -194,6 +421,8 @@ def plot_ablation_dumbbell(
             solid_capstyle="round",
             zorder=1,
         )
+        if ci is not None:
+            _plot_xerr(ax, abl, yi, ci[0] * scale, ci[1] * scale, color=ABLATION_COLOR)
         ax.scatter(
             abl,
             yi,
@@ -204,6 +433,9 @@ def plot_ablation_dumbbell(
             zorder=3,
         )
 
+    for yi in y_pos:
+        if full_lo is not None and full_hi is not None:
+            _plot_xerr(ax, full_scaled, yi, full_lo, full_hi, color=FULL_MODEL_COLOR)
     ax.scatter(
         [full_scaled] * len(y_pos),
         y_pos,
@@ -215,8 +447,15 @@ def plot_ablation_dumbbell(
         label="Full model",
     )
 
-    xmin = min(ablated_scaled + [full_scaled]) - 0.03 * scale
-    xmax = max(ablated_scaled + [full_scaled]) + 0.03 * scale
+    ci_bounds = [full_scaled]
+    if full_lo is not None and full_hi is not None:
+        ci_bounds.extend([full_lo, full_hi])
+    for abl, ci in zip(ablated_scaled, ablation_cis):
+        ci_bounds.append(abl)
+        if ci is not None:
+            ci_bounds.extend([ci[0] * scale, ci[1] * scale])
+    xmin = min(ci_bounds) - 0.03 * scale
+    xmax = max(ci_bounds) + 0.03 * scale
     if as_percent:
         ax.set_xlim(max(0.0, xmin), min(100.0, xmax))
     else:
@@ -240,6 +479,16 @@ def plot_ablation_dumbbell(
         framealpha=0.9,
     )
     _panel_title(ax, panel_label, title)
+    if ci_note:
+        ax.text(
+            0.0,
+            -0.14,
+            ci_note,
+            transform=ax.transAxes,
+            fontsize=7,
+            color="#555555",
+            va="top",
+        )
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
@@ -260,6 +509,8 @@ def plot_shap_beeswarm_matplotlib(
     shap_values: np.ndarray,
     feature_values: np.ndarray,
     feature_names: list[str],
+    *,
+    alpha: float = 0.35,
 ) -> None:
     """Matplotlib beeswarm fallback when shap is unavailable."""
     n_rows = len(feature_names)
@@ -279,7 +530,7 @@ def plot_shap_beeswarm_matplotlib(
             y,
             c=colors,
             s=6,
-            alpha=0.55,
+            alpha=alpha,
             linewidths=0,
             rasterized=True,
         )
@@ -302,6 +553,7 @@ def plot_shap_beeswarm(
     *,
     max_rows: int,
     seed: int,
+    alpha: float = 0.35,
 ) -> None:
     usecols = ["Name"]
     for feat, _ in PHYSICOCHEMICAL_FEATURES:
@@ -329,7 +581,9 @@ def plot_shap_beeswarm(
     ordered_names = [display_names[i] for i in order]
 
     if shap is None:
-        plot_shap_beeswarm_matplotlib(ax, shap_values, feature_values, ordered_names)
+        plot_shap_beeswarm_matplotlib(
+            ax, shap_values, feature_values, ordered_names, alpha=alpha,
+        )
     else:
         explanation = shap.Explanation(
             values=shap_values,
@@ -342,6 +596,8 @@ def plot_shap_beeswarm(
             max_display=len(ordered_names),
             show=False,
             plot_size=None,
+            alpha=alpha,
+            ax=ax,
         )
     ax.set_xlabel("SHAP value (impact on model score)")
     ax.set_ylabel("")
@@ -428,7 +684,9 @@ def create_figure(
     ablation_specs: list[str],
     output_path: Path,
     shap_max_rows: int,
+    shap_alpha: float,
     seed: int,
+    ci_level: float = DEFAULT_CI_LEVEL,
 ) -> None:
     full_test = load_test_overall(full_summary)
     full_hit = float(full_test["hit_at_top_pct"])
@@ -438,26 +696,59 @@ def create_figure(
     ablation_paths = resolve_ablations(full_summary, ablation_specs)
     ablation_hits: list[tuple[str, float]] = []
     ablation_ndcgs: list[tuple[str, float]] = []
+    ablation_hit_cis: dict[str, tuple[float, float]] = {}
+    ablation_ndcg_cis: dict[str, tuple[float, float]] = {}
+    ndcg_ci_method = ""
     for label, path in ablation_paths:
         if not path.is_file():
             print(f"[WARN] Ablation summary not found, skipping: {path}")
             continue
         hit = load_hit_at_top_pct(path)
         ndcg = load_ndcg(path)
+        hit_ci = load_hit_rate_ci(path, alpha=ci_level)
+        ndcg_lo, ndcg_hi, method = load_ndcg_ci(path, alpha=ci_level, seed=seed)
+        if not ndcg_ci_method:
+            ndcg_ci_method = method
         ablation_hits.append((label, hit))
         ablation_ndcgs.append((label, ndcg))
+        ablation_hit_cis[label] = hit_ci
+        ablation_ndcg_cis[label] = (ndcg_lo, ndcg_hi)
         print(
-            f"  Ablation '{label}': hit@top10% = {hit * 100:.1f}%, "
-            f"NDCG@{ndcg_k} = {ndcg:.3f}"
+            f"  Ablation '{label}': hit@top10% = {hit * 100:.1f}% "
+            f"[{hit_ci[0] * 100:.1f}, {hit_ci[1] * 100:.1f}], "
+            f"NDCG@{ndcg_k} = {ndcg:.3f} [{ndcg_lo:.3f}, {ndcg_hi:.3f}]"
         )
 
-    print(f"  Full model test hit@top10% = {full_hit * 100:.1f}%")
-    print(f"  Full model test NDCG@{ndcg_k} = {full_ndcg:.3f}")
+    full_hit_ci = load_hit_rate_ci(full_summary, alpha=ci_level)
+    full_ndcg_lo, full_ndcg_hi, full_ndcg_method = load_ndcg_ci(
+        full_summary, alpha=ci_level, seed=seed,
+    )
+    ndcg_ci_method = full_ndcg_method or ndcg_ci_method
+
+    print(
+        f"  Full model test hit@top10% = {full_hit * 100:.1f}% "
+        f"[{full_hit_ci[0] * 100:.1f}, {full_hit_ci[1] * 100:.1f}]"
+    )
+    print(
+        f"  Full model test NDCG@{ndcg_k} = {full_ndcg:.3f} "
+        f"[{full_ndcg_lo:.3f}, {full_ndcg_hi:.3f}] ({ndcg_ci_method})"
+    )
 
     ablation_hits = _order_ablations(full_hit, ablation_hits)
     label_order = [label for label, _ in ablation_hits]
     ndcg_by_label = dict(ablation_ndcgs)
     ablation_ndcgs = [(label, ndcg_by_label[label]) for label in label_order]
+    ordered_hit_cis = [ablation_hit_cis[label] for label in label_order]
+    ordered_ndcg_cis = [ablation_ndcg_cis[label] for label in label_order]
+
+    report_ablation_comparability(
+        full_summary=full_summary,
+        ablation_paths=ablation_paths,
+        full_hit_ci=full_hit_ci,
+        full_ndcg_ci=(full_ndcg_lo, full_ndcg_hi),
+        ablation_hit_cis=ablation_hit_cis,
+        ablation_ndcg_cis=ablation_ndcg_cis,
+    )
 
     fig = plt.figure(figsize=(FIG_WIDTH, FIG_HEIGHT))
     gs = fig.add_gridspec(
@@ -473,6 +764,7 @@ def create_figure(
     ax_c = fig.add_subplot(gs[1, 0])
     ax_d = fig.add_subplot(gs[1, 1])
 
+    ci_pct = int(round(ci_level * 100))
     plot_ablation_dumbbell(
         ax_a,
         full_hit,
@@ -481,6 +773,9 @@ def create_figure(
         title="Feature ablation (hit rate)",
         xlabel="Hit rate @ top 10%",
         as_percent=True,
+        full_ci=full_hit_ci,
+        ablation_cis=ordered_hit_cis,
+        ci_note=f"{ci_pct}% Wilson CI (label-level test hits)",
     )
     plot_ablation_dumbbell(
         ax_b,
@@ -490,9 +785,17 @@ def create_figure(
         title="Feature ablation (NDCG)",
         xlabel=f"NDCG@{ndcg_k} (test)",
         as_percent=False,
-        show_y_labels=False,
+        full_ci=(full_ndcg_lo, full_ndcg_hi),
+        ablation_cis=ordered_ndcg_cis,
+        ci_note=f"{ci_pct}% CI ({ndcg_ci_method})",
     )
-    plot_shap_beeswarm(ax_c, shap_candidates, max_rows=shap_max_rows, seed=seed)
+    plot_shap_beeswarm(
+        ax_c,
+        shap_candidates,
+        max_rows=shap_max_rows,
+        seed=seed,
+        alpha=shap_alpha,
+    )
     plot_cv_vs_test(ax_d, cv_folds, full_hit)
 
     fig.subplots_adjust(left=0.18, right=0.98, top=0.94, bottom=0.08)
@@ -548,10 +851,22 @@ def parse_args() -> argparse.Namespace:
         help="Max rows for SHAP beeswarm (random subsample; default 4000).",
     )
     p.add_argument(
+        "--shap-alpha",
+        type=float,
+        default=0.35,
+        help="Point opacity for Panel C SHAP beeswarm (0–1; lower = more blended; default 0.35).",
+    )
+    p.add_argument(
         "--seed",
         type=int,
         default=42,
-        help="Random seed for SHAP subsampling.",
+        help="Random seed for SHAP subsampling and bootstrap CIs.",
+    )
+    p.add_argument(
+        "--ci-level",
+        type=float,
+        default=DEFAULT_CI_LEVEL,
+        help="Confidence level for Panels A/B error bars (default 0.95).",
     )
     return p.parse_args()
 
@@ -562,6 +877,11 @@ def main() -> None:
         if not path.is_file():
             raise FileNotFoundError(f"Required input not found: {path}")
 
+    if not (0.0 < args.ci_level < 1.0):
+        raise ValueError("--ci-level must be between 0 and 1.")
+    if not (0.0 < args.shap_alpha <= 1.0):
+        raise ValueError("--shap-alpha must be in (0, 1].")
+
     create_figure(
         full_summary=args.full_summary,
         cv_folds=args.cv_folds,
@@ -569,7 +889,9 @@ def main() -> None:
         ablation_specs=args.ablation,
         output_path=args.output,
         shap_max_rows=args.shap_max_rows,
+        shap_alpha=args.shap_alpha,
         seed=args.seed,
+        ci_level=args.ci_level,
     )
 
 

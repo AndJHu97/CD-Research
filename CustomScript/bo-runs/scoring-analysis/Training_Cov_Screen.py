@@ -18,6 +18,16 @@ CV and test-set CSVs written to --output_dir:
     test_label_results.csv, test_query_groups.csv,
     test_warhead_accuracy.csv, test_residue_accuracy.csv,
     test_shap_per_candidate.csv, test_shap_global.csv
+
+Pinned clustering / splits (for ablation runs on an identical held-out set):
+    # Full model — cluster once, export splits
+    python Training_Cov_Screen.py ... --deep-cluster \\
+        --export-split query_group_splits.csv
+
+    # Ablations — reuse clusters.tsv + split CSV (skip MMseqs2 reruns)
+    python Training_Cov_Screen.py ... --deep-cluster \\
+        --clusters-tsv mmseqs_output/clusters.tsv \\
+        --split-csv query_group_splits.csv
 """
 
 import os
@@ -27,6 +37,7 @@ import json
 import pickle
 import argparse
 import warnings
+import shutil
 import requests
 import subprocess
 from dataclasses import dataclass
@@ -144,6 +155,181 @@ def extract_fasta_from_pdbs(pdb_folder: str, pdb_ids: list[str], output_fasta: s
     return output_fasta
 
 
+def extract_chain_fasta_from_pdbs(
+    pdb_folder: str,
+    pdb_ids: list[str],
+    output_fasta: str,
+    min_chain_length: int = 30,
+) -> int:
+    """
+    Extract one FASTA entry per polymer chain (PDBID__CHAIN headers)
+    for per-chain MMseqs2 clustering.
+    """
+    try:
+        from Bio.PDB import PDBParser, PPBuilder
+    except ImportError:
+        print("ERROR: BioPython required. Run: pip install biopython")
+        sys.exit(1)
+
+    parser = PDBParser(QUIET=True)
+    ppb = PPBuilder()
+    written = 0
+
+    with open(output_fasta, "w") as fout:
+        for pdb_id in set(pdb_ids):
+            pdb_id_upper = pdb_id.upper()
+            pdb_path = None
+            for fname in os.listdir(pdb_folder):
+                if fname.upper().replace(".PDB", "") == pdb_id_upper:
+                    pdb_path = os.path.join(pdb_folder, fname)
+                    break
+
+            if pdb_path is None:
+                pdb_path = download_pdb(pdb_id, pdb_folder)
+
+            if pdb_path is None or not os.path.exists(pdb_path):
+                print(f"  WARNING: No PDB found for {pdb_id}, skipping.")
+                continue
+
+            try:
+                structure = parser.get_structure(pdb_id, pdb_path)
+                for model in structure:
+                    for chain in model:
+                        peptides = ppb.build_peptides(chain)
+                        sequence = "".join(str(pp.get_sequence()) for pp in peptides)
+                        if len(sequence) < min_chain_length:
+                            continue
+                        chain_id = str(chain.id).strip() or " "
+                        header = f"{pdb_id_upper}__{chain_id}"
+                        fout.write(f">{header}\n{sequence}\n")
+                        written += 1
+            except Exception as e:
+                print(f"  WARNING: Could not parse {pdb_path}: {e}")
+
+    print(f"  Wrote {written} chain sequences to {output_fasta}")
+    return written
+
+
+class _UnionFind:
+    def __init__(self) -> None:
+        self.parent: dict[str, str] = {}
+
+    def add(self, node: str) -> None:
+        if node not in self.parent:
+            self.parent[node] = node
+
+    def find(self, node: str) -> str:
+        self.add(node)
+        if self.parent[node] != node:
+            self.parent[node] = self.find(self.parent[node])
+        return self.parent[node]
+
+    def union(self, left: str, right: str) -> None:
+        root_left = self.find(left)
+        root_right = self.find(right)
+        if root_left != root_right:
+            self.parent[root_right] = root_left
+
+
+def _parse_chain_fasta_header(header: str) -> tuple[str, str] | None:
+    if "__" not in header:
+        return None
+    pdb_id, chain = header.rsplit("__", 1)
+    pdb_id = pdb_id.strip().upper()
+    if not pdb_id:
+        return None
+    return pdb_id, chain
+
+
+def merge_chain_clusters_to_pdb_map(
+    pdb_ids: list[str],
+    chain_cluster_map: dict[str, str],
+) -> dict[str, str]:
+    """
+    Lift per-chain MMseqs2 clusters to PDB-level clusters.
+
+    Two PDBs share a cluster when any of their chains belong to the same
+    sequence cluster (conservative leakage control for whole-structure screening).
+    """
+    pdb_ids_upper = [str(pid).strip().upper() for pid in pdb_ids]
+    rep_to_pdbs: dict[str, list[str]] = defaultdict(list)
+
+    for member, rep in chain_cluster_map.items():
+        parsed = _parse_chain_fasta_header(member)
+        if parsed is None:
+            continue
+        pdb_id, _chain = parsed
+        rep_to_pdbs[rep.upper()].append(pdb_id)
+
+    uf = _UnionFind()
+    for pdb_id in pdb_ids_upper:
+        uf.add(pdb_id)
+
+    for pdbs in rep_to_pdbs.values():
+        unique_pdbs = list(dict.fromkeys(pdbs))
+        if len(unique_pdbs) < 2:
+            continue
+        anchor = unique_pdbs[0]
+        for other in unique_pdbs[1:]:
+            uf.union(anchor, other)
+
+    components: dict[str, list[str]] = defaultdict(list)
+    for pdb_id in pdb_ids_upper:
+        components[uf.find(pdb_id)].append(pdb_id)
+
+    cluster_map: dict[str, str] = {}
+    for members in components.values():
+        cluster_rep = min(members)
+        for pdb_id in members:
+            cluster_map[pdb_id] = cluster_rep
+    return cluster_map
+
+
+def _clean_mmseqs_artifacts(output_dir: str, db: str, clustered: str, tmp: str, tsv_path: str) -> None:
+    """Remove stale MMseqs2 DB/cluster files so reruns do not fail."""
+    db_name = os.path.basename(db)
+    cluster_name = os.path.basename(clustered)
+    removed: list[str] = []
+
+    for fname in os.listdir(output_dir):
+        path = os.path.join(output_dir, fname)
+        if fname == os.path.basename(tsv_path):
+            os.remove(path)
+            removed.append(fname)
+            continue
+        if fname.startswith(f"{db_name}.") or fname == db_name:
+            os.remove(path)
+            removed.append(fname)
+            continue
+        if fname.startswith(f"{cluster_name}.") or fname == cluster_name:
+            os.remove(path)
+            removed.append(fname)
+
+    if os.path.isdir(tmp):
+        shutil.rmtree(tmp)
+        removed.append(f"{os.path.basename(tmp)}/")
+
+    if removed:
+        print(f"  Cleared {len(removed)} stale MMseqs2 artifact(s) from {output_dir}")
+
+
+def _print_subprocess_failure(step_name: str, cmd: list[str], result: subprocess.CompletedProcess) -> None:
+    """Print detailed diagnostics when an MMseqs2 subprocess fails."""
+    print(f"  WARNING: MMseqs2 step failed ({step_name})")
+    print(f"    Command   : {' '.join(cmd)}")
+    print(f"    Exit code : {result.returncode}")
+    for stream_name, text in (("stdout", result.stdout), ("stderr", result.stderr)):
+        cleaned = (text or "").strip()
+        if not cleaned:
+            print(f"    {stream_name}: (empty)")
+            continue
+        lines = cleaned.splitlines()
+        print(f"    {stream_name} ({len(lines)} line(s)):")
+        preview = lines if len(lines) <= 40 else lines[:20] + ["...", f"({len(lines) - 40} lines omitted)", "..."] + lines[-20:]
+        for line in preview:
+            print(f"      {line}")
+
+
 def run_mmseqs2(fasta_path: str, output_dir: str,
                 seq_identity: float = 0.5, coverage: float = 0.8) -> dict[str, str]:
     """
@@ -168,22 +354,27 @@ def run_mmseqs2(fasta_path: str, output_dir: str,
                     cluster_map[pid] = pid
         return cluster_map
 
-    cmds = [
-        ["mmseqs", "createdb", fasta_path, db],
-        ["mmseqs", "cluster", db, clustered, tmp,
-         "--min-seq-id", str(seq_identity),
-         "-c", str(coverage), "--cov-mode", "0"],
-        ["mmseqs", "createtsv", db, db, clustered, tsv_path],
+    _clean_mmseqs_artifacts(output_dir, db, clustered, tmp, tsv_path)
+
+    cmds: list[tuple[str, list[str]]] = [
+        ("createdb", ["mmseqs", "createdb", fasta_path, db]),
+        ("cluster", [
+            "mmseqs", "cluster", db, clustered, tmp,
+            "--min-seq-id", str(seq_identity),
+            "-c", str(coverage), "--cov-mode", "0",
+        ]),
+        ("createtsv", ["mmseqs", "createtsv", db, db, clustered, tsv_path]),
     ]
-    for cmd in cmds:
+    failed_step: str | None = None
+    for step_name, cmd in cmds:
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            print(f"  WARNING: MMseqs2 step failed: {' '.join(cmd)}")
-            print(f"  {result.stderr[:300]}")
+            _print_subprocess_failure(step_name, cmd, result)
+            failed_step = step_name
             break
 
     cluster_map = {}
-    if os.path.exists(tsv_path):
+    if os.path.exists(tsv_path) and failed_step is None:
         with open(tsv_path) as f:
             for line in f:
                 parts = line.strip().split("\t")
@@ -494,23 +685,83 @@ def apply_large_pool_prefilter(
 # CLUSTERING & SPLITTING
 # ─────────────────────────────────────────────
 
+def load_clusters_tsv(tsv_path: str) -> dict[str, str]:
+    """
+    Load MMseqs2 createtsv output: rep\\tmember → {member: rep} (uppercase keys).
+    """
+    cluster_map: dict[str, str] = {}
+    with open(tsv_path, encoding="utf-8") as fh:
+        for line in fh:
+            parts = line.strip().split("\t")
+            if len(parts) != 2:
+                continue
+            rep, member = parts
+            cluster_map[member.upper()] = rep.upper()
+    return cluster_map
+
+
 def build_cluster_map(merged: pd.DataFrame,
                       pdb_folder: str | None,
                       mmseqs_dir: str,
                       seq_identity: float,
-                      coverage: float) -> dict[str, str]:
+                      coverage: float,
+                      deep_cluster: bool = False,
+                      min_chain_length: int = 30,
+                      clusters_tsv: str | None = None) -> dict[str, str]:
     """Build protein→cluster mapping via MMseqs2 (or fallback)."""
     print("\n[2/7] Building sequence clusters...")
     pdb_ids = merged["pdb_id"].unique().tolist()
+
+    if clusters_tsv:
+        if not os.path.isfile(clusters_tsv):
+            sys.exit(f"[ERROR] --clusters-tsv not found: {clusters_tsv}")
+        print(f"  Reusing precomputed clusters from {clusters_tsv}")
+        if deep_cluster:
+            print("  Mode: deep-cluster (PDB merge from chain-level TSV)")
+        raw_map = load_clusters_tsv(clusters_tsv)
+        if not raw_map:
+            sys.exit(f"[ERROR] --clusters-tsv is empty or unreadable: {clusters_tsv}")
+        if deep_cluster:
+            cluster_map = merge_chain_clusters_to_pdb_map(pdb_ids, raw_map)
+            n_chain_clusters = len(set(raw_map.values()))
+            n_pdb_clusters = len(set(cluster_map.values()))
+            print(f"  Deep-cluster: {n_chain_clusters} chain clusters → "
+                  f"{n_pdb_clusters} PDB clusters from {len(pdb_ids)} proteins.")
+        else:
+            cluster_map = raw_map
+            print(f"  Loaded {len(set(cluster_map.values()))} clusters "
+                  f"for {len(cluster_map)} members.")
+        for pid in pdb_ids:
+            if pid.upper() not in cluster_map:
+                cluster_map[pid.upper()] = pid.upper()
+        return cluster_map
 
     if pdb_folder is None:
         print("  No PDB folder specified — using each protein as its own cluster.")
         return {pid.upper(): pid.upper() for pid in pdb_ids}
 
-    fasta_path = os.path.join(mmseqs_dir, "proteins.fasta")
     os.makedirs(mmseqs_dir, exist_ok=True)
-    extract_fasta_from_pdbs(pdb_folder, pdb_ids, fasta_path)
-    cluster_map = run_mmseqs2(fasta_path, mmseqs_dir, seq_identity, coverage)
+
+    if deep_cluster:
+        print("  Mode: deep-cluster (per-chain MMseqs2, PDB merge on shared chain clusters)")
+        fasta_path = os.path.join(mmseqs_dir, "chains.fasta")
+        n_chains = extract_chain_fasta_from_pdbs(
+            pdb_folder, pdb_ids, fasta_path, min_chain_length=min_chain_length,
+        )
+        if n_chains == 0:
+            print("  WARNING: No chain sequences extracted; using each protein as its own cluster.")
+            return {pid.upper(): pid.upper() for pid in pdb_ids}
+
+        chain_cluster_map = run_mmseqs2(fasta_path, mmseqs_dir, seq_identity, coverage)
+        cluster_map = merge_chain_clusters_to_pdb_map(pdb_ids, chain_cluster_map)
+        n_chain_clusters = len(set(chain_cluster_map.values()))
+        n_pdb_clusters = len(set(cluster_map.values()))
+        print(f"  Deep-cluster: {n_chain_clusters} chain clusters → {n_pdb_clusters} PDB clusters "
+              f"from {len(pdb_ids)} proteins.")
+    else:
+        fasta_path = os.path.join(mmseqs_dir, "proteins.fasta")
+        extract_fasta_from_pdbs(pdb_folder, pdb_ids, fasta_path)
+        cluster_map = run_mmseqs2(fasta_path, mmseqs_dir, seq_identity, coverage)
 
     # Ensure all pdb_ids have a cluster (fallback to self)
     for pid in pdb_ids:
@@ -520,50 +771,126 @@ def build_cluster_map(merged: pd.DataFrame,
     return cluster_map
 
 
+def export_query_group_splits(merged: pd.DataFrame, path: str) -> None:
+    """Write one row per query_group with train/test split."""
+    out = (
+        merged.groupby("query_group", as_index=False)["split"]
+        .first()
+        .sort_values("query_group")
+    )
+    out_dir = os.path.dirname(path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+    out.to_csv(path, index=False)
+    n_test = int((out["split"] == "test").sum())
+    print(f"  Exported query-group splits: {path} "
+          f"({len(out)} groups, {n_test} test)")
+
+
+def _attach_cluster_ids(merged: pd.DataFrame, cluster_map: dict[str, str]) -> pd.DataFrame:
+    merged = merged.copy()
+    merged["cluster_id"] = merged["pdb_id"].str.upper().map(cluster_map)
+    merged["cluster_id"] = merged["cluster_id"].fillna(merged["pdb_id"].str.upper())
+    return merged
+
+
+def _apply_split_csv(merged: pd.DataFrame, split_csv: str) -> pd.DataFrame:
+    splits = pd.read_csv(split_csv)
+    required = {"query_group", "split"}
+    if not required.issubset(splits.columns):
+        sys.exit(
+            f"[ERROR] --split-csv must contain columns {sorted(required)}, "
+            f"got {list(splits.columns)}"
+        )
+
+    split_map = (
+        splits.drop_duplicates("query_group", keep="first")
+        .set_index("query_group")["split"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .to_dict()
+    )
+    invalid = sorted({v for v in split_map.values() if v not in {"train", "test"}})
+    if invalid:
+        sys.exit(
+            f"[ERROR] --split-csv split values must be 'train' or 'test', got: {invalid}"
+        )
+
+    qgs_in_data = set(merged["query_group"].unique())
+    missing = sorted(qgs_in_data - set(split_map.keys()))
+    if missing:
+        preview = ", ".join(missing[:5])
+        suffix = "..." if len(missing) > 5 else ""
+        sys.exit(
+            f"[ERROR] --split-csv missing {len(missing)} query group(s) present in "
+            f"training data, e.g. {preview}{suffix}"
+        )
+
+    merged = merged.copy()
+    merged["split"] = merged["query_group"].map(split_map)
+    if merged["split"].isna().any():
+        sys.exit("[ERROR] --split-csv failed to assign split for some rows.")
+    return merged
+
+
 def assign_splits(merged: pd.DataFrame,
                   cluster_map: dict[str, str],
                   test_size: float = 0.2,
                   n_folds: int = 5,
-                  random_state: int = 42) -> pd.DataFrame:
+                  random_state: int = 42,
+                  split_csv: str | None = None,
+                  export_split: str | None = None) -> pd.DataFrame:
     """
     Assign train/test split at the protein-cluster level,
-    stratified by target residue type.
-    Returns merged df with 'split' column: 'train' or 'test'.
+    stratified by target residue type, or load a fixed split CSV.
+
+    Returns merged df with 'split' and 'cluster_id' columns.
     """
     print("\n[3/7] Splitting data...")
+    merged = _attach_cluster_ids(merged, cluster_map)
 
-    merged["cluster_id"] = merged["pdb_id"].str.upper().map(cluster_map)
-    merged["cluster_id"] = merged["cluster_id"].fillna(merged["pdb_id"].str.upper())
+    if split_csv:
+        if not os.path.isfile(split_csv):
+            sys.exit(f"[ERROR] --split-csv not found: {split_csv}")
+        print(f"  Using fixed query-group splits from {split_csv}")
+        merged = _apply_split_csv(merged, split_csv)
+    else:
+        print(f"  Stratified cluster holdout: {test_size * 100:.0f}% test "
+              f"(random_state={random_state})")
 
-    # One row per query_group with its cluster + target residue type
-    qg_meta = (merged.groupby("query_group")
-               .agg(cluster_id=("cluster_id", "first"),
-                    target_res=("target_residue_type", "first"))
-               .reset_index())
+        # One row per query_group with its cluster + target residue type
+        qg_meta = (merged.groupby("query_group")
+                   .agg(cluster_id=("cluster_id", "first"),
+                        target_res=("target_residue_type", "first"))
+                   .reset_index())
 
-    # Unique clusters with their dominant residue type
-    cluster_meta = (qg_meta.groupby("cluster_id")
-                    .agg(target_res=("target_res", lambda x: x.mode()[0]))
-                    .reset_index())
+        # Unique clusters with their dominant residue type
+        cluster_meta = (qg_meta.groupby("cluster_id")
+                        .agg(target_res=("target_res", lambda x: x.mode()[0]))
+                        .reset_index())
 
-    rng = np.random.RandomState(random_state)
-    test_clusters = set()
+        rng = np.random.RandomState(random_state)
+        test_clusters = set()
 
-    # Stratified holdout by residue type
-    for res_type, grp in cluster_meta.groupby("target_res"):
-        clusters = grp["cluster_id"].values
-        n_test = max(1, int(len(clusters) * test_size))
-        chosen = rng.choice(clusters, size=n_test, replace=False)
-        test_clusters.update(chosen)
+        # Stratified holdout by residue type
+        for res_type, grp in cluster_meta.groupby("target_res"):
+            clusters = grp["cluster_id"].values
+            n_test = max(1, int(len(clusters) * test_size))
+            chosen = rng.choice(clusters, size=n_test, replace=False)
+            test_clusters.update(chosen)
 
-    merged["split"] = merged["cluster_id"].apply(
-        lambda c: "test" if c in test_clusters else "train"
-    )
+        merged["split"] = merged["cluster_id"].apply(
+            lambda c: "test" if c in test_clusters else "train"
+        )
 
-    train_qg = merged[merged["split"]=="train"]["query_group"].nunique()
-    test_qg  = merged[merged["split"]=="test"]["query_group"].nunique()
+    train_qg = merged[merged["split"] == "train"]["query_group"].nunique()
+    test_qg = merged[merged["split"] == "test"]["query_group"].nunique()
     print(f"  Train query groups: {train_qg}")
     print(f"  Test  query groups: {test_qg}")
+
+    if export_split:
+        export_query_group_splits(merged, export_split)
 
     return merged
 
@@ -797,6 +1124,29 @@ def _ss_stats_when_hit(eval_df: pd.DataFrame, hit_col: str) -> dict[str, float |
     return _metric_stats_when_hit(eval_df, hit_col, "search_space_reduction")
 
 
+def _metric_stats_when_miss(
+    eval_df: pd.DataFrame,
+    hit_col: str,
+    value_col: str,
+) -> dict[str, float | int]:
+    """Mean/median of *value_col* among rows where *hit_col* is false."""
+    if eval_df.empty or hit_col not in eval_df.columns or value_col not in eval_df.columns:
+        return {"avg": float("nan"), "median": float("nan"), "n": 0}
+    misses = eval_df.loc[eval_df[hit_col] == 0, value_col]
+    if misses.empty:
+        return {"avg": float("nan"), "median": float("nan"), "n": 0}
+    return {
+        "avg": float(misses.mean()),
+        "median": float(misses.median()),
+        "n": int(len(misses)),
+    }
+
+
+def _ss_stats_when_miss(eval_df: pd.DataFrame, hit_col: str) -> dict[str, float | int]:
+    """Mean/median search-space reduction among rows where *hit_col* is false."""
+    return _metric_stats_when_miss(eval_df, hit_col, "search_space_reduction")
+
+
 def summarize_eval_metrics(
     eval_df: pd.DataFrame,
     k: int,
@@ -822,12 +1172,20 @@ def summarize_eval_metrics(
             "median_ss_reduction_when_hit_at_top_pct": float("nan"),
             "avg_ss_reduction_when_hit": float("nan"),
             "median_ss_reduction_when_hit": float("nan"),
+            "avg_ss_reduction_when_miss_at_k": float("nan"),
+            "median_ss_reduction_when_miss_at_k": float("nan"),
+            "avg_ss_reduction_when_miss_at_top_pct": float("nan"),
+            "median_ss_reduction_when_miss_at_top_pct": float("nan"),
+            "avg_ss_reduction_when_miss": float("nan"),
+            "median_ss_reduction_when_miss": float("nan"),
             "avg_rank_when_hit_at_k": float("nan"),
             "median_rank_when_hit_at_k": float("nan"),
             "n_hit_at_k": 0,
             "avg_rank_when_hit_at_top_pct": float("nan"),
             "median_rank_when_hit_at_top_pct": float("nan"),
             "n_hit_at_top_pct": 0,
+            "n_miss_at_k": 0,
+            "n_miss_at_top_pct": 0,
             "avg_rank_when_hit": float("nan"),
             "median_rank_when_hit": float("nan"),
         }
@@ -836,6 +1194,8 @@ def summarize_eval_metrics(
     hit_pct_stats = _rank_stats_when_hit(eval_df, "hit_at_top_pct")
     ss_hit_k_stats = _ss_stats_when_hit(eval_df, "hit_at_k")
     ss_hit_pct_stats = _ss_stats_when_hit(eval_df, "hit_at_top_pct")
+    ss_miss_k_stats = _ss_stats_when_miss(eval_df, "hit_at_k")
+    ss_miss_pct_stats = _ss_stats_when_miss(eval_df, "hit_at_top_pct")
     active_hit_col = (
         "hit_at_top_pct" if reward_mode == "hit_at_top_pct" else "hit_at_k"
     )
@@ -844,6 +1204,9 @@ def summarize_eval_metrics(
     )
     active_ss_stats = (
         ss_hit_pct_stats if reward_mode == "hit_at_top_pct" else ss_hit_k_stats
+    )
+    active_ss_miss_stats = (
+        ss_miss_pct_stats if reward_mode == "hit_at_top_pct" else ss_miss_k_stats
     )
 
     return {
@@ -862,12 +1225,20 @@ def summarize_eval_metrics(
         "median_ss_reduction_when_hit_at_top_pct": ss_hit_pct_stats["median"],
         "avg_ss_reduction_when_hit": active_ss_stats["avg"],
         "median_ss_reduction_when_hit": active_ss_stats["median"],
+        "avg_ss_reduction_when_miss_at_k": ss_miss_k_stats["avg"],
+        "median_ss_reduction_when_miss_at_k": ss_miss_k_stats["median"],
+        "avg_ss_reduction_when_miss_at_top_pct": ss_miss_pct_stats["avg"],
+        "median_ss_reduction_when_miss_at_top_pct": ss_miss_pct_stats["median"],
+        "avg_ss_reduction_when_miss": active_ss_miss_stats["avg"],
+        "median_ss_reduction_when_miss": active_ss_miss_stats["median"],
         "avg_rank_when_hit_at_k": hit_k_stats["avg"],
         "median_rank_when_hit_at_k": hit_k_stats["median"],
         "n_hit_at_k": hit_k_stats["n"],
         "avg_rank_when_hit_at_top_pct": hit_pct_stats["avg"],
         "median_rank_when_hit_at_top_pct": hit_pct_stats["median"],
         "n_hit_at_top_pct": hit_pct_stats["n"],
+        "n_miss_at_k": ss_miss_k_stats["n"],
+        "n_miss_at_top_pct": ss_miss_pct_stats["n"],
         "avg_rank_when_hit": active_stats["avg"],
         "median_rank_when_hit": active_stats["median"],
         "hit_criterion": active_hit_col,
@@ -875,6 +1246,69 @@ def summarize_eval_metrics(
         "top_pct_threshold": top_pct_threshold,
         "k": k,
         "epsilon": epsilon,
+    }
+
+
+def summarize_screen_metrics(
+    eval_label_df: pd.DataFrame,
+    eval_qg_df: pd.DataFrame,
+    k: int,
+    top_pct_threshold: float,
+    reward_mode: str,
+    epsilon: float,
+) -> dict:
+    """
+    Hit/objective at label level; rank / NDCG / search-space stats over all
+    matched (Name × Warhead) query groups (may exceed label count).
+    """
+    label_stats = summarize_eval_metrics(
+        eval_label_df, k, top_pct_threshold, reward_mode, epsilon,
+    )
+    qg_stats = summarize_eval_metrics(
+        eval_qg_df, k, top_pct_threshold, reward_mode, epsilon,
+    )
+    return {
+        "reward_mode": reward_mode,
+        "top_pct_threshold": top_pct_threshold,
+        "k": k,
+        "epsilon": epsilon,
+        "n_labels": int(len(eval_label_df)),
+        "n_query_groups": int(len(eval_qg_df)),
+        "hit_rate": label_stats["hit_rate"],
+        "hit_at_top_pct": label_stats["hit_at_top_pct"],
+        "objective": label_stats["objective"],
+        "rank_bonus": label_stats["rank_bonus"],
+        "avg_rank": qg_stats["avg_rank"],
+        "median_rank": float(eval_qg_df["target_rank"].median()),
+        "ndcg": qg_stats["ndcg"],
+        "avg_top_pct": qg_stats["avg_top_pct"],
+        "avg_search_space_reduction": qg_stats["avg_search_space_reduction"],
+        "median_search_space_reduction": qg_stats["median_search_space_reduction"],
+        "avg_ss_reduction_when_hit_at_k": qg_stats["avg_ss_reduction_when_hit_at_k"],
+        "median_ss_reduction_when_hit_at_k": qg_stats["median_ss_reduction_when_hit_at_k"],
+        "avg_ss_reduction_when_hit_at_top_pct": qg_stats["avg_ss_reduction_when_hit_at_top_pct"],
+        "median_ss_reduction_when_hit_at_top_pct": qg_stats["median_ss_reduction_when_hit_at_top_pct"],
+        "avg_ss_reduction_when_hit": qg_stats["avg_ss_reduction_when_hit"],
+        "median_ss_reduction_when_hit": qg_stats["median_ss_reduction_when_hit"],
+        "avg_ss_reduction_when_miss_at_k": qg_stats["avg_ss_reduction_when_miss_at_k"],
+        "median_ss_reduction_when_miss_at_k": qg_stats["median_ss_reduction_when_miss_at_k"],
+        "avg_ss_reduction_when_miss_at_top_pct": qg_stats["avg_ss_reduction_when_miss_at_top_pct"],
+        "median_ss_reduction_when_miss_at_top_pct": qg_stats[
+            "median_ss_reduction_when_miss_at_top_pct"
+        ],
+        "avg_ss_reduction_when_miss": qg_stats["avg_ss_reduction_when_miss"],
+        "median_ss_reduction_when_miss": qg_stats["median_ss_reduction_when_miss"],
+        "avg_rank_when_hit_at_k": qg_stats["avg_rank_when_hit_at_k"],
+        "median_rank_when_hit_at_k": qg_stats["median_rank_when_hit_at_k"],
+        "n_hit_at_k": qg_stats["n_hit_at_k"],
+        "avg_rank_when_hit_at_top_pct": qg_stats["avg_rank_when_hit_at_top_pct"],
+        "median_rank_when_hit_at_top_pct": qg_stats["median_rank_when_hit_at_top_pct"],
+        "n_hit_at_top_pct": qg_stats["n_hit_at_top_pct"],
+        "n_miss_at_k": qg_stats["n_miss_at_k"],
+        "n_miss_at_top_pct": qg_stats["n_miss_at_top_pct"],
+        "avg_rank_when_hit": qg_stats["avg_rank_when_hit"],
+        "median_rank_when_hit": qg_stats["median_rank_when_hit"],
+        "hit_criterion": qg_stats["hit_criterion"],
     }
 
 
@@ -1243,6 +1677,26 @@ def _format_ss_when_hit(
     )
 
 
+def _format_ss_when_miss(
+    summary: dict,
+    hit_label: str,
+    avg_key: str,
+    median_key: str,
+    n_key: str,
+    n_total: int,
+) -> str:
+    avg = summary.get(avg_key, float("nan"))
+    median = summary.get(median_key, float("nan"))
+    n_miss = int(summary.get(n_key, 0) or 0)
+    if pd.isna(avg):
+        return f"    SS reduction | {hit_label:<12}: n/a (0/{n_total} misses)"
+    return (
+        f"    SS reduction | {hit_label:<12}: "
+        f"avg {100.0 * avg:.1f}%  (median {100.0 * median:.1f}%, "
+        f"{n_miss}/{n_total} misses)"
+    )
+
+
 def _format_rank_when_hit(
     summary: dict,
     hit_label: str,
@@ -1325,6 +1779,21 @@ def print_results(
         "n_hit_at_top_pct",
         len(eval_df),
     ))
+    print(_format_ss_when_miss(
+        summary, f"Hit@{k}",
+        "avg_ss_reduction_when_miss_at_k",
+        "median_ss_reduction_when_miss_at_k",
+        "n_miss_at_k",
+        len(eval_df),
+    ))
+    print(_format_ss_when_miss(
+        summary,
+        f"Hit@{pct_label}",
+        "avg_ss_reduction_when_miss_at_top_pct",
+        "median_ss_reduction_when_miss_at_top_pct",
+        "n_miss_at_top_pct",
+        len(eval_df),
+    ))
     headline = (
         f"Hit@{pct_label}" if reward_mode == "hit_at_top_pct" else f"Hit@{k}"
     )
@@ -1344,6 +1813,14 @@ def print_results(
               f"{100.0 * summary['avg_ss_reduction_when_hit']:.1f}%")
         print(f"    Med SS red. when hit : "
               f"{100.0 * summary['median_ss_reduction_when_hit']:.1f}%")
+    if pd.isna(summary.get("avg_ss_reduction_when_miss")):
+        print("    Avg SS red. when miss: n/a")
+        print("    Med SS red. when miss: n/a")
+    else:
+        print(f"    Avg SS red. when miss: "
+              f"{100.0 * summary['avg_ss_reduction_when_miss']:.1f}%")
+        print(f"    Med SS red. when miss: "
+              f"{100.0 * summary['median_ss_reduction_when_miss']:.1f}%")
 
     print(f"\n  Per Residue Type:")
     per_res = (eval_df.groupby("target_residue_type")
@@ -1604,6 +2081,7 @@ def save_outputs(
         pickle.dump({
             "model": model,
             "features": feature_cols,
+            "model_type": "ranker",
             "include_residue_type": include_residue_type,
             "k": k,
             "reward_mode": reward_mode,
@@ -1650,7 +2128,7 @@ def save_outputs(
             max_rows=shap_max_rows,
         )
 
-    from Cov_Screen import per_residue_screen_breakdown, summarize_screen_metrics
+    from Cov_Screen import per_residue_screen_breakdown
 
     test_overall = summarize_screen_metrics(
         eval_label_df, eval_qg_df, k, top_pct_threshold, reward_mode, epsilon,
@@ -1759,12 +2237,39 @@ def parse_args():
                    help="Folder containing PDB files (downloads missing ones here)")
     p.add_argument("--mmseqs_dir", default="mmseqs_output",
                    help="Directory for MMseqs2 intermediate files")
-    p.add_argument("--seq_identity", type=float, default=0.5,
-                   help="MMseqs2 sequence identity threshold (default 0.5)")
+    p.add_argument("--seq_identity", type=float, default=0.3,
+                   help="MMseqs2 sequence identity threshold (default 0.3)")
     p.add_argument("--coverage",   type=float, default=0.8,
                    help="MMseqs2 alignment coverage (default 0.8)")
+    p.add_argument("--deep-cluster", action="store_true",
+                   help="Cluster per polymer chain, then merge PDBs that share any "
+                        "chain cluster (better for multisubunit structures). "
+                        "Default: concatenate all chains per PDB.")
+    p.add_argument("--deep-cluster-min-chain-length", type=int, default=30,
+                   help="Minimum chain length for --deep-cluster (default 30)")
+    p.add_argument(
+        "--clusters-tsv",
+        default=None,
+        metavar="PATH",
+        help="Reuse MMseqs2 clusters.tsv instead of rerunning MMseqs2. "
+             "Use the same --deep-cluster setting as when the TSV was created.",
+    )
+    p.add_argument(
+        "--split-csv",
+        default=None,
+        metavar="PATH",
+        help="Fixed query_group→train/test assignments (columns: query_group, split). "
+             "Skips random cluster holdout; use for ablation runs.",
+    )
+    p.add_argument(
+        "--export-split",
+        default=None,
+        metavar="PATH",
+        help="After splitting, write query_group,split CSV for reuse with --split-csv.",
+    )
     p.add_argument("--test_size",  type=float, default=0.2,
-                   help="Fraction of clusters for held-out test set (default 0.2)")
+                   help="Fraction of clusters for held-out test set (default 0.2). "
+                        "Ignored when --split-csv is set.")
     p.add_argument("--n_folds",    type=int, default=5,
                    help="Number of GroupKFold CV folds (default 5)")
     p.add_argument("--normalize_within_protein", action="store_true",
@@ -1810,6 +2315,8 @@ def main():
         sys.exit("[ERROR] --top-pct must be in (0, 100].")
     if args.topk < 1:
         sys.exit("[ERROR] --topk must be >= 1.")
+    if args.split_csv and args.export_split:
+        sys.exit("[ERROR] Use either --split-csv or --export-split, not both.")
 
     large_pool_prefilter_meta = None
     pool_prefilter_filters = None
@@ -1829,7 +2336,10 @@ def main():
     # 2. Cluster
     cluster_map = build_cluster_map(
         merged, args.pdb_folder, args.mmseqs_dir,
-        args.seq_identity, args.coverage
+        args.seq_identity, args.coverage,
+        deep_cluster=args.deep_cluster,
+        min_chain_length=args.deep_cluster_min_chain_length,
+        clusters_tsv=args.clusters_tsv,
     )
 
     # 3. Split
@@ -1838,6 +2348,8 @@ def main():
         test_size=args.test_size,
         n_folds=args.n_folds,
         random_state=args.random_state,
+        split_csv=args.split_csv,
+        export_split=args.export_split,
     )
 
     # 4. Features
