@@ -13,6 +13,7 @@ Usage:
 
 import argparse
 import math
+import re
 
 
 TARGET_ATOM = {
@@ -75,19 +76,18 @@ def parse_pdb_atoms(pdb_path):
 
 
 def parse_residue_spec(spec):
-	"""Parse A:CYS:797 or CYS:797 or cys797 into (chain, resname, resseq)."""
-	parts = spec.upper().replace("-", ":").split(":")
-	if len(parts) == 3:
-		chain, resname, resseq = parts
-		return chain, resname, int(resseq)
-	if len(parts) == 2:
-		if parts[0].isalpha() and len(parts[0]) == 1:
-			raise ValueError(f"Residue spec '{spec}' needs residue name, e.g. A:CYS:797")
-		resname, resseq = parts
-		return None, resname, int(resseq)
-	if len(parts) == 1:
-		token = parts[0]
-		return None, token[:3], int(token[3:])
+	"""Parse A:CYS:797, A:HIS:-2, CYS:797, or cys797 into (chain, resname, resseq).
+
+	Negative residue numbers are allowed. Do not rewrite '-' to ':' — that
+	breaks specs like A:HIS:-2 into A:HIS::2.
+	"""
+	text = str(spec).strip().upper()
+	matched = re.fullmatch(r"(?:([A-Z0-9]):)?([A-Z]{1,3}):(-?\d+)", text)
+	if matched:
+		return matched.group(1), matched.group(2), int(matched.group(3))
+	matched = re.fullmatch(r"([A-Z]{1,3})(-?\d+)", text)
+	if matched:
+		return None, matched.group(1), int(matched.group(2))
 	raise ValueError(f"Cannot parse residue spec '{spec}'. Use format A:CYS:797")
 
 

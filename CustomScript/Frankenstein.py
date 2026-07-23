@@ -1542,15 +1542,17 @@ def main(pdb_path, electrophile_smiles, output_prefix="Frankenstein", top_n_type
         # Add warhead name and reactivity scores (both protonated and deprotonated)
         filtered_nucleophiles["Warhead"] = warhead_name
 
-        # Extract reactivity components for both protonation states
+        # Extract reactivity components for both protonation states.
+        # Use this warhead's scores from warhead_data — NOT leftover
+        # type_scores_*_upper globals from the last Pass-1 iteration.
         filtered_nucleophiles = attach_reactivity_component_columns(
             filtered_nucleophiles,
-            type_scores_protonated_upper,
+            type_scores_protonated,
             "Protonated",
         )
         filtered_nucleophiles = attach_reactivity_component_columns(
             filtered_nucleophiles,
-            type_scores_deprotonated_upper,
+            type_scores_deprotonated,
             "Deprotonated",
         )
 

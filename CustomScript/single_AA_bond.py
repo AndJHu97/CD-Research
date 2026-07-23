@@ -77,13 +77,30 @@ XTBCMD = "xtb"  # ensure xtb in PATH
 REF_DELTA_E_HARTREE = -0.016  # ~ -10 kcal/mol baseline for single-point correction
 
 # ---------- helpers ----------
-def rdkit_mol_from_smiles(smiles):
+def rdkit_mol_from_smiles(smiles, seed=42):
     m = Chem.MolFromSmiles(smiles)
     if m is None:
         raise ValueError("Invalid SMILES: " + smiles)
     m = Chem.AddHs(m)
-    AllChem.EmbedMolecule(m, AllChem.ETKDGv3())
-    AllChem.MMFFOptimizeMolecule(m)
+
+    # Prefer standard ETKDG; some large/flexible ligands fail and leave no
+    # conformer, which then crashes MMFF with "Bad Conformer Id".
+    params = AllChem.ETKDGv3()
+    params.randomSeed = seed
+    embed_rc = AllChem.EmbedMolecule(m, params)
+    if embed_rc != 0:
+        params.useRandomCoords = True
+        embed_rc = AllChem.EmbedMolecule(m, params)
+    if embed_rc != 0:
+        raise ValueError(
+            f"RDKit could not embed a 3D conformer for SMILES: {smiles}"
+        )
+
+    try:
+        AllChem.MMFFOptimizeMolecule(m)
+    except ValueError:
+        # Rare MMFF parameter gaps; UFF is a reasonable fallback for xTB input.
+        AllChem.UFFOptimizeMolecule(m)
     return m
 
 def write_xyz(mol, path):

@@ -1223,6 +1223,38 @@ def load_model_bundle(path: str) -> dict:
     return bundle
 
 
+def load_unlabeled_candidates(training_csv: str) -> pd.DataFrame:
+    """Load candidate rows for score-only inference without target labels."""
+    df = pd.read_csv(training_csv, sep=",", engine="c", low_memory=False)
+    required = {"Name", "Warhead", "Residue", "ResNum", "Chain"}
+    missing = sorted(required - set(df.columns))
+    if missing:
+        sys.exit(
+            "[ERROR] Candidate CSV is missing required columns:\n  "
+            + ", ".join(missing)
+        )
+
+    df = df.copy()
+    df["_name_upper"] = df["Name"].astype(str).str.strip().str.upper()
+    df["_warhead_lower"] = df["Warhead"].astype(str).str.strip().str.lower()
+    df["Residue"] = df["Residue"].astype(str).str.strip().str.upper()
+    df["_resnum_str"] = df["ResNum"].map(_normalize_resnum)
+    df["_chain_upper"] = df["Chain"].astype(str).str.strip().str.upper()
+    df["pdb_id"] = df["_name_upper"].str.split("-").str[0]
+    df = df[df["Residue"].isin(VALID_RESIDUES)].copy()
+    df = df.drop_duplicates(
+        subset=[
+            "_name_upper", "Residue", "_resnum_str",
+            "_chain_upper", "_warhead_lower",
+        ],
+        keep="first",
+    )
+    df["query_group"] = df["_name_upper"] + "__" + df["_warhead_lower"]
+    if df.empty:
+        sys.exit("[ERROR] No supported nucleophile candidate rows were found.")
+    return df
+
+
 def prepare_inference_features(
     df: pd.DataFrame,
     model_features: list[str],
@@ -1308,7 +1340,8 @@ def export_scores_csv(df: pd.DataFrame, path: str) -> None:
     cols = [
         c for c in [
             "Name", "Residue", "ResNum", "Chain", "Warhead",
-            "query_group", "relevance", "pred_score",
+            "query_group", "relevance", "pred_score", "candidate_rank",
+            "candidate_count", "rank_frac",
         ]
         if c in df.columns
     ]
@@ -1333,8 +1366,8 @@ def parse_args() -> argparse.Namespace:
                         "(bundle may include model_type=ranker|classifier)")
     p.add_argument("--training", required=True,
                    help="Path to candidate/training CSV")
-    p.add_argument("--labels", required=True,
-                   help="Path to labels CSV")
+    p.add_argument("--labels", default=None,
+                   help="Path to labels CSV. Omit for score-only candidate ranking.")
     p.add_argument("--topk", type=int, default=None,
                    help="K for Hit@K / NDCG@K (default: value stored in pkl)")
     p.add_argument("--reward-mode", choices=REWARD_MODES, default=None,
@@ -1429,16 +1462,20 @@ def main() -> None:
         sys.exit("[ERROR] --topk must be >= 1.")
     if args.VS and not args.residue:
         sys.exit("[ERROR] --VS requires --residue (e.g. --residue CYS).")
+    if args.VS and not args.labels:
+        sys.exit("[ERROR] --VS requires --labels.")
     if args.pred_score and not args.VS:
         sys.exit("[ERROR] --pred-score requires --VS.")
 
     vs_mode = bool(args.VS)
     vs_pred_score_mode = bool(args.pred_score)
+    score_only_mode = not vs_mode and not args.labels
 
     print("=" * 60)
     print("  Cov_Screen — evaluation"
           + (" (virtual screening)" if vs_mode else "")
-          + (" [pred_score]" if vs_pred_score_mode else ""))
+          + (" [pred_score]" if vs_pred_score_mode else "")
+          + (" (score-only)" if score_only_mode else ""))
     print("=" * 60)
     print(f"  Model           : {args.model}")
     print(f"  Model type      : {model_type}")
@@ -1470,6 +1507,8 @@ def main() -> None:
             else:
                 print("  Warhead coverage: warn if any site is missing warheads")
         print("  VS labels use   : Name + warhead only (target site columns ignored)")
+    elif score_only_mode:
+        print("  Labels           : omitted (candidate ranking only)")
     elif args.perfect_match:
         print("  Hit counting    : one per label (perfect-match: all matched "
               "warheads must hit when label lists multiple Frankenstein warheads)")
@@ -1480,15 +1519,19 @@ def main() -> None:
     else:
         print("  Hit counting    : one per label (any matched warhead hit counts)")
 
-    merged = (
-        load_merged_for_vs(args.training, args.labels)
-        if vs_mode else
-        load_and_merge(args.training, args.labels)
-    )
+    if vs_mode:
+        merged = load_merged_for_vs(args.training, args.labels)
+    elif score_only_mode:
+        merged = load_unlabeled_candidates(args.training)
+    else:
+        merged = load_and_merge(args.training, args.labels)
     n_groups = merged["query_group"].nunique()
     print(f"\n[INFO] Query groups to score: {n_groups:,}")
 
-    label_wh_counts = build_label_warhead_counts(args.labels) if not vs_mode else {}
+    label_wh_counts = (
+        build_label_warhead_counts(args.labels)
+        if not vs_mode and not score_only_mode else {}
+    )
     name_wh_counts = build_name_warhead_counts(args.labels) if vs_mode else {}
 
     merged = merged.sort_values("query_group").reset_index(drop=True)
@@ -1497,6 +1540,17 @@ def main() -> None:
         normalize_within_protein=args.normalize_within_protein,
         model_type=model_type,
     )
+    if score_only_mode:
+        merged["candidate_rank"] = merged.groupby("query_group")[
+            "pred_score"
+        ].rank(method="first", ascending=False).astype(int)
+        merged["candidate_count"] = merged.groupby("query_group")[
+            "pred_score"
+        ].transform("size").astype(int)
+        denominator = (merged["candidate_count"] - 1).clip(lower=1)
+        merged["rank_frac"] = (
+            (merged["candidate_rank"] - 1) / denominator
+        ).where(merged["candidate_count"] > 1, 0.0)
 
     eval_qg_df = pd.DataFrame()
     eval_label_df = pd.DataFrame()
@@ -1580,6 +1634,12 @@ def main() -> None:
             )
         if vs_wide_df.empty:
             print("[WARN] VS ranking produced no rows — check --residue/--chain/--resnum.")
+    elif score_only_mode:
+        print(f"[INFO] Candidate rows scored: {len(merged):,}")
+        print(
+            "[INFO] Score-only mode ranks candidates independently within each "
+            "Name × Warhead query group."
+        )
     else:
         eval_qg_df = evaluate_predictions(
             merged, "pred_score",
@@ -1631,7 +1691,8 @@ def main() -> None:
 
     shap_global_df = pd.DataFrame()
     run_shap = not vs_mode and not args.no_shap and (
-        args.export_shap is not None or args.export_results is not None
+        args.export_shap is not None
+        or (args.export_results is not None and not score_only_mode)
     )
     if run_shap:
         prepared = prepare_inference_features(
@@ -1659,14 +1720,21 @@ def main() -> None:
         "model": str(Path(args.model).resolve()),
         "model_type": model_type,
         "training": str(Path(args.training).resolve()),
-        "labels": str(Path(args.labels).resolve()),
+        "labels": str(Path(args.labels).resolve()) if args.labels else None,
         "k": k,
         "top_pct_threshold": top_pct,
         "reward_mode": reward_mode,
         "rank_bonus_epsilon": epsilon,
         "perfect_match": args.perfect_match,
-        "mode": "vs_pred_score" if vs_pred_score_mode else ("vs" if vs_mode else "eval"),
-        "n_query_groups": int(n_groups if vs_mode else len(eval_qg_df)),
+        "mode": (
+            "vs_pred_score" if vs_pred_score_mode
+            else "vs" if vs_mode
+            else "score_only" if score_only_mode
+            else "eval"
+        ),
+        "n_query_groups": int(
+            n_groups if (vs_mode or score_only_mode) else len(eval_qg_df)
+        ),
         "n_labels": int(len(eval_label_df)),
         "overall": overall,
         "per_residue": per_res,
@@ -1707,7 +1775,9 @@ def main() -> None:
             print(f"[INFO] VS rankings exported → {vs_export_path}")
 
     if args.export_results:
-        if vs_mode:
+        if score_only_mode:
+            print("[WARN] --export-results requires labels; skipped in score-only mode.")
+        elif vs_mode:
             print("[WARN] --export-results is label-eval output; skipped in --VS mode.")
         else:
             eval_label_df.to_csv(args.export_results, index=False)
@@ -1738,8 +1808,22 @@ def main() -> None:
             print(f"[INFO] Per-residue accuracy exported → {residue_path}")
 
     if args.export_query_groups:
-        eval_qg_df.to_csv(args.export_query_groups, index=False)
-        print(f"[INFO] Per-query-group metrics exported → {args.export_query_groups}")
+        if score_only_mode:
+            group_summary = (
+                merged.sort_values(["query_group", "pred_score"], ascending=[True, False])
+                .groupby("query_group", as_index=False)
+                .agg(
+                    Name=("Name", "first"),
+                    Warhead=("Warhead", "first"),
+                    n_candidates=("pred_score", "size"),
+                    top_pred_score=("pred_score", "max"),
+                )
+            )
+            group_summary.to_csv(args.export_query_groups, index=False)
+            print(f"[INFO] Per-query-group rankings exported → {args.export_query_groups}")
+        else:
+            eval_qg_df.to_csv(args.export_query_groups, index=False)
+            print(f"[INFO] Per-query-group metrics exported → {args.export_query_groups}")
 
     if composition.get("n_query_groups") and args.export_summary:
         comp_path = str(Path(args.export_summary).with_name(
