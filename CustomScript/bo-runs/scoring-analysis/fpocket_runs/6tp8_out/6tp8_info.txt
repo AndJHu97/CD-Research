@@ -1,0 +1,945 @@
+Pocket 1 :
+	Score : 	1.213
+	Druggability Score : 	0.996
+	Number of Alpha Spheres : 	205
+	Total SASA : 	101.813
+	Polar SASA : 	16.072
+	Apolar SASA : 	85.742
+	Volume : 	1513.132
+	Mean local hydrophobic density : 	70.993
+	Mean alpha sphere radius :	4.037
+	Mean alp. sph. solvent access : 	0.484
+	Apolar alpha sphere proportion : 	0.688
+	Hydrophobicity score:	41.789
+	Volume score: 	 3.737
+	Polarity score:	 8
+	Charge score :	 -1
+	Proportion of polar atoms: 	30.189
+	Alpha sphere density : 	8.909
+	Cent. of mass - Alpha Sphere max dist: 	20.774
+	Flexibility : 	0.168
+
+Pocket 2 :
+	Score : 	0.445
+	Druggability Score : 	0.720
+	Number of Alpha Spheres : 	93
+	Total SASA : 	101.423
+	Polar SASA : 	9.643
+	Apolar SASA : 	91.780
+	Volume : 	741.685
+	Mean local hydrophobic density : 	46.485
+	Mean alpha sphere radius :	3.946
+	Mean alp. sph. solvent access : 	0.475
+	Apolar alpha sphere proportion : 	0.710
+	Hydrophobicity score:	39.913
+	Volume score: 	 3.783
+	Polarity score:	 10
+	Charge score :	 0
+	Proportion of polar atoms: 	30.357
+	Alpha sphere density : 	6.025
+	Cent. of mass - Alpha Sphere max dist: 	15.197
+	Flexibility : 	0.276
+
+Pocket 3 :
+	Score : 	0.067
+	Druggability Score : 	0.029
+	Number of Alpha Spheres : 	42
+	Total SASA : 	149.009
+	Polar SASA : 	46.360
+	Apolar SASA : 	102.648
+	Volume : 	547.232
+	Mean local hydrophobic density : 	15.182
+	Mean alpha sphere radius :	3.778
+	Mean alp. sph. solvent access : 	0.570
+	Apolar alpha sphere proportion : 	0.524
+	Hydrophobicity score:	11.400
+	Volume score: 	 3.067
+	Polarity score:	 6
+	Charge score :	 -2
+	Proportion of polar atoms: 	39.474
+	Alpha sphere density : 	6.221
+	Cent. of mass - Alpha Sphere max dist: 	15.574
+	Flexibility : 	0.191
+
+Pocket 4 :
+	Score : 	0.057
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	29
+	Total SASA : 	93.164
+	Polar SASA : 	59.351
+	Apolar SASA : 	33.814
+	Volume : 	325.016
+	Mean local hydrophobic density : 	7.000
+	Mean alpha sphere radius :	3.769
+	Mean alp. sph. solvent access : 	0.398
+	Apolar alpha sphere proportion : 	0.276
+	Hydrophobicity score:	-8.000
+	Volume score: 	 4.500
+	Polarity score:	 7
+	Charge score :	 2
+	Proportion of polar atoms: 	60.870
+	Alpha sphere density : 	4.257
+	Cent. of mass - Alpha Sphere max dist: 	8.488
+	Flexibility : 	0.268
+
+Pocket 5 :
+	Score : 	0.049
+	Druggability Score : 	0.001
+	Number of Alpha Spheres : 	15
+	Total SASA : 	7.325
+	Polar SASA : 	0.000
+	Apolar SASA : 	7.325
+	Volume : 	61.090
+	Mean local hydrophobic density : 	14.000
+	Mean alpha sphere radius :	3.548
+	Mean alp. sph. solvent access : 	0.438
+	Apolar alpha sphere proportion : 	1.000
+	Hydrophobicity score:	80.000
+	Volume score: 	 4.286
+	Polarity score:	 0
+	Charge score :	 0
+	Proportion of polar atoms: 	8.333
+	Alpha sphere density : 	0.916
+	Cent. of mass - Alpha Sphere max dist: 	2.409
+	Flexibility : 	0.033
+
+Pocket 6 :
+	Score : 	0.048
+	Druggability Score : 	0.003
+	Number of Alpha Spheres : 	19
+	Total SASA : 	99.126
+	Polar SASA : 	18.215
+	Apolar SASA : 	80.911
+	Volume : 	443.220
+	Mean local hydrophobic density : 	6.750
+	Mean alpha sphere radius :	4.101
+	Mean alp. sph. solvent access : 	0.716
+	Apolar alpha sphere proportion : 	0.421
+	Hydrophobicity score:	18.714
+	Volume score: 	 2.714
+	Polarity score:	 0
+	Charge score :	 0
+	Proportion of polar atoms: 	27.273
+	Alpha sphere density : 	4.795
+	Cent. of mass - Alpha Sphere max dist: 	11.769
+	Flexibility : 	0.364
+
+Pocket 7 :
+	Score : 	0.044
+	Druggability Score : 	0.003
+	Number of Alpha Spheres : 	18
+	Total SASA : 	54.011
+	Polar SASA : 	6.517
+	Apolar SASA : 	47.493
+	Volume : 	299.822
+	Mean local hydrophobic density : 	14.000
+	Mean alpha sphere radius :	4.147
+	Mean alp. sph. solvent access : 	0.631
+	Apolar alpha sphere proportion : 	0.833
+	Hydrophobicity score:	25.857
+	Volume score: 	 4.000
+	Polarity score:	 2
+	Charge score :	 0
+	Proportion of polar atoms: 	29.412
+	Alpha sphere density : 	2.834
+	Cent. of mass - Alpha Sphere max dist: 	7.442
+	Flexibility : 	0.187
+
+Pocket 8 :
+	Score : 	0.028
+	Druggability Score : 	0.004
+	Number of Alpha Spheres : 	15
+	Total SASA : 	86.339
+	Polar SASA : 	15.089
+	Apolar SASA : 	71.250
+	Volume : 	265.827
+	Mean local hydrophobic density : 	8.800
+	Mean alpha sphere radius :	3.905
+	Mean alp. sph. solvent access : 	0.663
+	Apolar alpha sphere proportion : 	0.667
+	Hydrophobicity score:	12.714
+	Volume score: 	 3.714
+	Polarity score:	 3
+	Charge score :	 1
+	Proportion of polar atoms: 	29.412
+	Alpha sphere density : 	4.179
+	Cent. of mass - Alpha Sphere max dist: 	9.214
+	Flexibility : 	0.417
+
+Pocket 9 :
+	Score : 	0.025
+	Druggability Score : 	0.001
+	Number of Alpha Spheres : 	17
+	Total SASA : 	67.069
+	Polar SASA : 	23.594
+	Apolar SASA : 	43.475
+	Volume : 	247.101
+	Mean local hydrophobic density : 	4.000
+	Mean alpha sphere radius :	4.087
+	Mean alp. sph. solvent access : 	0.712
+	Apolar alpha sphere proportion : 	0.294
+	Hydrophobicity score:	17.714
+	Volume score: 	 3.000
+	Polarity score:	 3
+	Charge score :	 0
+	Proportion of polar atoms: 	47.059
+	Alpha sphere density : 	3.245
+	Cent. of mass - Alpha Sphere max dist: 	7.629
+	Flexibility : 	0.175
+
+Pocket 10 :
+	Score : 	0.021
+	Druggability Score : 	0.001
+	Number of Alpha Spheres : 	15
+	Total SASA : 	49.901
+	Polar SASA : 	18.502
+	Apolar SASA : 	31.398
+	Volume : 	141.405
+	Mean local hydrophobic density : 	7.000
+	Mean alpha sphere radius :	3.580
+	Mean alp. sph. solvent access : 	0.390
+	Apolar alpha sphere proportion : 	0.533
+	Hydrophobicity score:	21.286
+	Volume score: 	 4.571
+	Polarity score:	 5
+	Charge score :	 2
+	Proportion of polar atoms: 	42.857
+	Alpha sphere density : 	2.484
+	Cent. of mass - Alpha Sphere max dist: 	4.161
+	Flexibility : 	0.138
+
+Pocket 11 :
+	Score : 	-0.001
+	Druggability Score : 	0.006
+	Number of Alpha Spheres : 	30
+	Total SASA : 	101.459
+	Polar SASA : 	49.531
+	Apolar SASA : 	51.928
+	Volume : 	394.973
+	Mean local hydrophobic density : 	16.444
+	Mean alpha sphere radius :	4.007
+	Mean alp. sph. solvent access : 	0.547
+	Apolar alpha sphere proportion : 	0.600
+	Hydrophobicity score:	6.250
+	Volume score: 	 3.000
+	Polarity score:	 3
+	Charge score :	 0
+	Proportion of polar atoms: 	47.826
+	Alpha sphere density : 	4.028
+	Cent. of mass - Alpha Sphere max dist: 	10.687
+	Flexibility : 	0.230
+
+Pocket 12 :
+	Score : 	-0.001
+	Druggability Score : 	0.001
+	Number of Alpha Spheres : 	21
+	Total SASA : 	98.954
+	Polar SASA : 	38.573
+	Apolar SASA : 	60.381
+	Volume : 	360.631
+	Mean local hydrophobic density : 	10.500
+	Mean alpha sphere radius :	3.914
+	Mean alp. sph. solvent access : 	0.637
+	Apolar alpha sphere proportion : 	0.571
+	Hydrophobicity score:	17.556
+	Volume score: 	 3.556
+	Polarity score:	 4
+	Charge score :	 1
+	Proportion of polar atoms: 	38.095
+	Alpha sphere density : 	4.154
+	Cent. of mass - Alpha Sphere max dist: 	9.731
+	Flexibility : 	0.492
+
+Pocket 13 :
+	Score : 	-0.001
+	Druggability Score : 	0.001
+	Number of Alpha Spheres : 	17
+	Total SASA : 	78.306
+	Polar SASA : 	30.001
+	Apolar SASA : 	48.305
+	Volume : 	249.881
+	Mean local hydrophobic density : 	4.000
+	Mean alpha sphere radius :	4.091
+	Mean alp. sph. solvent access : 	0.705
+	Apolar alpha sphere proportion : 	0.294
+	Hydrophobicity score:	17.714
+	Volume score: 	 3.000
+	Polarity score:	 3
+	Charge score :	 0
+	Proportion of polar atoms: 	47.059
+	Alpha sphere density : 	3.445
+	Cent. of mass - Alpha Sphere max dist: 	8.054
+	Flexibility : 	0.189
+
+Pocket 14 :
+	Score : 	-0.013
+	Druggability Score : 	0.002
+	Number of Alpha Spheres : 	18
+	Total SASA : 	58.059
+	Polar SASA : 	10.803
+	Apolar SASA : 	47.256
+	Volume : 	245.026
+	Mean local hydrophobic density : 	14.000
+	Mean alpha sphere radius :	4.157
+	Mean alp. sph. solvent access : 	0.623
+	Apolar alpha sphere proportion : 	0.833
+	Hydrophobicity score:	25.857
+	Volume score: 	 4.000
+	Polarity score:	 2
+	Charge score :	 0
+	Proportion of polar atoms: 	31.250
+	Alpha sphere density : 	2.394
+	Cent. of mass - Alpha Sphere max dist: 	5.830
+	Flexibility : 	0.185
+
+Pocket 15 :
+	Score : 	-0.014
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	18
+	Total SASA : 	51.138
+	Polar SASA : 	26.986
+	Apolar SASA : 	24.153
+	Volume : 	175.352
+	Mean local hydrophobic density : 	6.000
+	Mean alpha sphere radius :	3.857
+	Mean alp. sph. solvent access : 	0.543
+	Apolar alpha sphere proportion : 	0.389
+	Hydrophobicity score:	-2.400
+	Volume score: 	 4.600
+	Polarity score:	 4
+	Charge score :	 1
+	Proportion of polar atoms: 	50.000
+	Alpha sphere density : 	2.068
+	Cent. of mass - Alpha Sphere max dist: 	4.232
+	Flexibility : 	0.292
+
+Pocket 16 :
+	Score : 	-0.016
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	33
+	Total SASA : 	66.300
+	Polar SASA : 	39.733
+	Apolar SASA : 	26.568
+	Volume : 	223.347
+	Mean local hydrophobic density : 	5.000
+	Mean alpha sphere radius :	3.948
+	Mean alp. sph. solvent access : 	0.524
+	Apolar alpha sphere proportion : 	0.182
+	Hydrophobicity score:	24.889
+	Volume score: 	 3.667
+	Polarity score:	 5
+	Charge score :	 0
+	Proportion of polar atoms: 	56.522
+	Alpha sphere density : 	2.284
+	Cent. of mass - Alpha Sphere max dist: 	5.447
+	Flexibility : 	0.230
+
+Pocket 17 :
+	Score : 	-0.019
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	16
+	Total SASA : 	76.616
+	Polar SASA : 	24.688
+	Apolar SASA : 	51.928
+	Volume : 	264.644
+	Mean local hydrophobic density : 	6.000
+	Mean alpha sphere radius :	3.908
+	Mean alp. sph. solvent access : 	0.666
+	Apolar alpha sphere proportion : 	0.438
+	Hydrophobicity score:	9.625
+	Volume score: 	 3.125
+	Polarity score:	 4
+	Charge score :	 0
+	Proportion of polar atoms: 	44.444
+	Alpha sphere density : 	3.160
+	Cent. of mass - Alpha Sphere max dist: 	8.191
+	Flexibility : 	0.438
+
+Pocket 18 :
+	Score : 	-0.020
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	22
+	Total SASA : 	66.046
+	Polar SASA : 	32.232
+	Apolar SASA : 	33.814
+	Volume : 	279.556
+	Mean local hydrophobic density : 	5.000
+	Mean alpha sphere radius :	4.052
+	Mean alp. sph. solvent access : 	0.596
+	Apolar alpha sphere proportion : 	0.273
+	Hydrophobicity score:	6.556
+	Volume score: 	 3.667
+	Polarity score:	 7
+	Charge score :	 -1
+	Proportion of polar atoms: 	47.368
+	Alpha sphere density : 	2.504
+	Cent. of mass - Alpha Sphere max dist: 	5.283
+	Flexibility : 	0.170
+
+Pocket 19 :
+	Score : 	-0.022
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	22
+	Total SASA : 	108.362
+	Polar SASA : 	52.811
+	Apolar SASA : 	55.551
+	Volume : 	511.505
+	Mean local hydrophobic density : 	0.000
+	Mean alpha sphere radius :	4.293
+	Mean alp. sph. solvent access : 	0.612
+	Apolar alpha sphere proportion : 	0.045
+	Hydrophobicity score:	-16.000
+	Volume score: 	 3.714
+	Polarity score:	 5
+	Charge score :	 1
+	Proportion of polar atoms: 	50.000
+	Alpha sphere density : 	4.334
+	Cent. of mass - Alpha Sphere max dist: 	8.934
+	Flexibility : 	0.224
+
+Pocket 20 :
+	Score : 	-0.033
+	Druggability Score : 	0.003
+	Number of Alpha Spheres : 	16
+	Total SASA : 	102.086
+	Polar SASA : 	13.929
+	Apolar SASA : 	88.157
+	Volume : 	379.672
+	Mean local hydrophobic density : 	7.778
+	Mean alpha sphere radius :	3.923
+	Mean alp. sph. solvent access : 	0.640
+	Apolar alpha sphere proportion : 	0.562
+	Hydrophobicity score:	28.500
+	Volume score: 	 3.000
+	Polarity score:	 0
+	Charge score :	 0
+	Proportion of polar atoms: 	23.810
+	Alpha sphere density : 	4.132
+	Cent. of mass - Alpha Sphere max dist: 	10.587
+	Flexibility : 	0.302
+
+Pocket 21 :
+	Score : 	-0.042
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	29
+	Total SASA : 	107.680
+	Polar SASA : 	81.112
+	Apolar SASA : 	26.568
+	Volume : 	405.973
+	Mean local hydrophobic density : 	9.000
+	Mean alpha sphere radius :	3.964
+	Mean alp. sph. solvent access : 	0.438
+	Apolar alpha sphere proportion : 	0.345
+	Hydrophobicity score:	-7.727
+	Volume score: 	 4.273
+	Polarity score:	 8
+	Charge score :	 2
+	Proportion of polar atoms: 	56.522
+	Alpha sphere density : 	3.828
+	Cent. of mass - Alpha Sphere max dist: 	10.831
+	Flexibility : 	0.223
+
+Pocket 22 :
+	Score : 	-0.042
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	21
+	Total SASA : 	68.979
+	Polar SASA : 	52.072
+	Apolar SASA : 	16.907
+	Volume : 	235.699
+	Mean local hydrophobic density : 	2.000
+	Mean alpha sphere radius :	3.727
+	Mean alp. sph. solvent access : 	0.471
+	Apolar alpha sphere proportion : 	0.143
+	Hydrophobicity score:	-4.333
+	Volume score: 	 5.000
+	Polarity score:	 5
+	Charge score :	 2
+	Proportion of polar atoms: 	60.000
+	Alpha sphere density : 	2.460
+	Cent. of mass - Alpha Sphere max dist: 	6.796
+	Flexibility : 	0.488
+
+Pocket 23 :
+	Score : 	-0.043
+	Druggability Score : 	0.020
+	Number of Alpha Spheres : 	31
+	Total SASA : 	114.487
+	Polar SASA : 	31.161
+	Apolar SASA : 	83.326
+	Volume : 	321.177
+	Mean local hydrophobic density : 	21.615
+	Mean alpha sphere radius :	3.877
+	Mean alp. sph. solvent access : 	0.442
+	Apolar alpha sphere proportion : 	0.839
+	Hydrophobicity score:	23.308
+	Volume score: 	 3.923
+	Polarity score:	 6
+	Charge score :	 -1
+	Proportion of polar atoms: 	28.000
+	Alpha sphere density : 	4.146
+	Cent. of mass - Alpha Sphere max dist: 	11.017
+	Flexibility : 	0.453
+
+Pocket 24 :
+	Score : 	-0.043
+	Druggability Score : 	0.003
+	Number of Alpha Spheres : 	17
+	Total SASA : 	108.515
+	Polar SASA : 	20.358
+	Apolar SASA : 	88.157
+	Volume : 	440.104
+	Mean local hydrophobic density : 	10.000
+	Mean alpha sphere radius :	4.000
+	Mean alp. sph. solvent access : 	0.659
+	Apolar alpha sphere proportion : 	0.647
+	Hydrophobicity score:	18.714
+	Volume score: 	 2.714
+	Polarity score:	 0
+	Charge score :	 0
+	Proportion of polar atoms: 	33.333
+	Alpha sphere density : 	4.265
+	Cent. of mass - Alpha Sphere max dist: 	11.664
+	Flexibility : 	0.259
+
+Pocket 25 :
+	Score : 	-0.044
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	36
+	Total SASA : 	74.770
+	Polar SASA : 	53.033
+	Apolar SASA : 	21.737
+	Volume : 	238.836
+	Mean local hydrophobic density : 	3.000
+	Mean alpha sphere radius :	3.942
+	Mean alp. sph. solvent access : 	0.538
+	Apolar alpha sphere proportion : 	0.111
+	Hydrophobicity score:	24.889
+	Volume score: 	 3.667
+	Polarity score:	 5
+	Charge score :	 0
+	Proportion of polar atoms: 	58.333
+	Alpha sphere density : 	2.245
+	Cent. of mass - Alpha Sphere max dist: 	5.754
+	Flexibility : 	0.271
+
+Pocket 26 :
+	Score : 	-0.057
+	Druggability Score : 	0.002
+	Number of Alpha Spheres : 	33
+	Total SASA : 	117.294
+	Polar SASA : 	48.459
+	Apolar SASA : 	68.835
+	Volume : 	402.062
+	Mean local hydrophobic density : 	15.765
+	Mean alpha sphere radius :	4.081
+	Mean alp. sph. solvent access : 	0.529
+	Apolar alpha sphere proportion : 	0.515
+	Hydrophobicity score:	5.000
+	Volume score: 	 2.889
+	Polarity score:	 4
+	Charge score :	 0
+	Proportion of polar atoms: 	45.833
+	Alpha sphere density : 	4.024
+	Cent. of mass - Alpha Sphere max dist: 	11.159
+	Flexibility : 	0.208
+
+Pocket 27 :
+	Score : 	-0.057
+	Druggability Score : 	0.002
+	Number of Alpha Spheres : 	26
+	Total SASA : 	104.896
+	Polar SASA : 	30.023
+	Apolar SASA : 	74.873
+	Volume : 	316.527
+	Mean local hydrophobic density : 	10.833
+	Mean alpha sphere radius :	3.788
+	Mean alp. sph. solvent access : 	0.473
+	Apolar alpha sphere proportion : 	0.462
+	Hydrophobicity score:	7.100
+	Volume score: 	 2.900
+	Polarity score:	 4
+	Charge score :	 -1
+	Proportion of polar atoms: 	40.909
+	Alpha sphere density : 	3.669
+	Cent. of mass - Alpha Sphere max dist: 	7.347
+	Flexibility : 	0.151
+
+Pocket 28 :
+	Score : 	-0.072
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	28
+	Total SASA : 	136.187
+	Polar SASA : 	73.390
+	Apolar SASA : 	62.797
+	Volume : 	597.470
+	Mean local hydrophobic density : 	0.000
+	Mean alpha sphere radius :	4.176
+	Mean alp. sph. solvent access : 	0.527
+	Apolar alpha sphere proportion : 	0.000
+	Hydrophobicity score:	-18.778
+	Volume score: 	 3.889
+	Polarity score:	 7
+	Charge score :	 2
+	Proportion of polar atoms: 	47.826
+	Alpha sphere density : 	4.725
+	Cent. of mass - Alpha Sphere max dist: 	11.935
+	Flexibility : 	0.214
+
+Pocket 29 :
+	Score : 	-0.073
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	19
+	Total SASA : 	88.488
+	Polar SASA : 	48.636
+	Apolar SASA : 	39.852
+	Volume : 	267.122
+	Mean local hydrophobic density : 	6.000
+	Mean alpha sphere radius :	3.882
+	Mean alp. sph. solvent access : 	0.477
+	Apolar alpha sphere proportion : 	0.368
+	Hydrophobicity score:	-4.111
+	Volume score: 	 4.000
+	Polarity score:	 6
+	Charge score :	 2
+	Proportion of polar atoms: 	50.000
+	Alpha sphere density : 	3.003
+	Cent. of mass - Alpha Sphere max dist: 	7.470
+	Flexibility : 	0.281
+
+Pocket 30 :
+	Score : 	-0.075
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	15
+	Total SASA : 	87.376
+	Polar SASA : 	46.316
+	Apolar SASA : 	41.059
+	Volume : 	295.165
+	Mean local hydrophobic density : 	8.000
+	Mean alpha sphere radius :	3.918
+	Mean alp. sph. solvent access : 	0.525
+	Apolar alpha sphere proportion : 	0.600
+	Hydrophobicity score:	19.286
+	Volume score: 	 4.429
+	Polarity score:	 5
+	Charge score :	 0
+	Proportion of polar atoms: 	50.000
+	Alpha sphere density : 	3.065
+	Cent. of mass - Alpha Sphere max dist: 	7.431
+	Flexibility : 	0.265
+
+Pocket 31 :
+	Score : 	-0.076
+	Druggability Score : 	0.002
+	Number of Alpha Spheres : 	27
+	Total SASA : 	68.843
+	Polar SASA : 	19.331
+	Apolar SASA : 	49.513
+	Volume : 	162.603
+	Mean local hydrophobic density : 	18.000
+	Mean alpha sphere radius :	3.831
+	Mean alp. sph. solvent access : 	0.444
+	Apolar alpha sphere proportion : 	0.704
+	Hydrophobicity score:	28.300
+	Volume score: 	 4.000
+	Polarity score:	 5
+	Charge score :	 -1
+	Proportion of polar atoms: 	35.000
+	Alpha sphere density : 	1.945
+	Cent. of mass - Alpha Sphere max dist: 	4.302
+	Flexibility : 	0.419
+
+Pocket 32 :
+	Score : 	-0.077
+	Druggability Score : 	0.002
+	Number of Alpha Spheres : 	27
+	Total SASA : 	107.614
+	Polar SASA : 	47.233
+	Apolar SASA : 	60.381
+	Volume : 	365.582
+	Mean local hydrophobic density : 	8.000
+	Mean alpha sphere radius :	4.041
+	Mean alp. sph. solvent access : 	0.564
+	Apolar alpha sphere proportion : 	0.333
+	Hydrophobicity score:	24.769
+	Volume score: 	 2.769
+	Polarity score:	 2
+	Charge score :	 -1
+	Proportion of polar atoms: 	39.130
+	Alpha sphere density : 	3.570
+	Cent. of mass - Alpha Sphere max dist: 	8.706
+	Flexibility : 	0.258
+
+Pocket 33 :
+	Score : 	-0.087
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	16
+	Total SASA : 	58.303
+	Polar SASA : 	35.358
+	Apolar SASA : 	22.945
+	Volume : 	175.046
+	Mean local hydrophobic density : 	4.000
+	Mean alpha sphere radius :	4.095
+	Mean alp. sph. solvent access : 	0.637
+	Apolar alpha sphere proportion : 	0.312
+	Hydrophobicity score:	2.250
+	Volume score: 	 3.875
+	Polarity score:	 7
+	Charge score :	 -1
+	Proportion of polar atoms: 	50.000
+	Alpha sphere density : 	1.643
+	Cent. of mass - Alpha Sphere max dist: 	4.122
+	Flexibility : 	0.164
+
+Pocket 34 :
+	Score : 	-0.089
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	21
+	Total SASA : 	77.301
+	Polar SASA : 	28.996
+	Apolar SASA : 	48.305
+	Volume : 	243.248
+	Mean local hydrophobic density : 	5.000
+	Mean alpha sphere radius :	4.138
+	Mean alp. sph. solvent access : 	0.599
+	Apolar alpha sphere proportion : 	0.286
+	Hydrophobicity score:	3.600
+	Volume score: 	 3.900
+	Polarity score:	 8
+	Charge score :	 0
+	Proportion of polar atoms: 	50.000
+	Alpha sphere density : 	2.307
+	Cent. of mass - Alpha Sphere max dist: 	4.744
+	Flexibility : 	0.145
+
+Pocket 35 :
+	Score : 	-0.090
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	18
+	Total SASA : 	90.409
+	Polar SASA : 	39.688
+	Apolar SASA : 	50.720
+	Volume : 	305.766
+	Mean local hydrophobic density : 	4.000
+	Mean alpha sphere radius :	4.008
+	Mean alp. sph. solvent access : 	0.572
+	Apolar alpha sphere proportion : 	0.278
+	Hydrophobicity score:	23.727
+	Volume score: 	 3.000
+	Polarity score:	 2
+	Charge score :	 -1
+	Proportion of polar atoms: 	42.105
+	Alpha sphere density : 	2.938
+	Cent. of mass - Alpha Sphere max dist: 	7.218
+	Flexibility : 	0.242
+
+Pocket 36 :
+	Score : 	-0.092
+	Druggability Score : 	0.001
+	Number of Alpha Spheres : 	16
+	Total SASA : 	79.194
+	Polar SASA : 	33.304
+	Apolar SASA : 	45.890
+	Volume : 	231.157
+	Mean local hydrophobic density : 	11.000
+	Mean alpha sphere radius :	3.900
+	Mean alp. sph. solvent access : 	0.483
+	Apolar alpha sphere proportion : 	0.750
+	Hydrophobicity score:	19.286
+	Volume score: 	 4.429
+	Polarity score:	 5
+	Charge score :	 0
+	Proportion of polar atoms: 	42.857
+	Alpha sphere density : 	2.511
+	Cent. of mass - Alpha Sphere max dist: 	6.653
+	Flexibility : 	0.283
+
+Pocket 37 :
+	Score : 	-0.100
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	30
+	Total SASA : 	81.559
+	Polar SASA : 	46.537
+	Apolar SASA : 	35.021
+	Volume : 	213.326
+	Mean local hydrophobic density : 	2.000
+	Mean alpha sphere radius :	3.937
+	Mean alp. sph. solvent access : 	0.508
+	Apolar alpha sphere proportion : 	0.100
+	Hydrophobicity score:	24.889
+	Volume score: 	 3.667
+	Polarity score:	 5
+	Charge score :	 0
+	Proportion of polar atoms: 	59.091
+	Alpha sphere density : 	2.124
+	Cent. of mass - Alpha Sphere max dist: 	5.488
+	Flexibility : 	0.298
+
+Pocket 38 :
+	Score : 	-0.102
+	Druggability Score : 	0.001
+	Number of Alpha Spheres : 	25
+	Total SASA : 	97.264
+	Polar SASA : 	33.259
+	Apolar SASA : 	64.004
+	Volume : 	314.707
+	Mean local hydrophobic density : 	6.000
+	Mean alpha sphere radius :	4.033
+	Mean alp. sph. solvent access : 	0.514
+	Apolar alpha sphere proportion : 	0.280
+	Hydrophobicity score:	25.167
+	Volume score: 	 2.917
+	Polarity score:	 2
+	Charge score :	 -1
+	Proportion of polar atoms: 	42.857
+	Alpha sphere density : 	2.899
+	Cent. of mass - Alpha Sphere max dist: 	6.487
+	Flexibility : 	0.218
+
+Pocket 39 :
+	Score : 	-0.108
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	21
+	Total SASA : 	126.028
+	Polar SASA : 	65.647
+	Apolar SASA : 	60.381
+	Volume : 	536.773
+	Mean local hydrophobic density : 	1.000
+	Mean alpha sphere radius :	4.272
+	Mean alp. sph. solvent access : 	0.560
+	Apolar alpha sphere proportion : 	0.095
+	Hydrophobicity score:	-2.667
+	Volume score: 	 4.111
+	Polarity score:	 7
+	Charge score :	 2
+	Proportion of polar atoms: 	50.000
+	Alpha sphere density : 	4.163
+	Cent. of mass - Alpha Sphere max dist: 	8.724
+	Flexibility : 	0.209
+
+Pocket 40 :
+	Score : 	-0.110
+	Druggability Score : 	0.002
+	Number of Alpha Spheres : 	15
+	Total SASA : 	67.355
+	Polar SASA : 	2.143
+	Apolar SASA : 	65.212
+	Volume : 	208.511
+	Mean local hydrophobic density : 	13.000
+	Mean alpha sphere radius :	3.804
+	Mean alp. sph. solvent access : 	0.613
+	Apolar alpha sphere proportion : 	0.933
+	Hydrophobicity score:	30.600
+	Volume score: 	 2.600
+	Polarity score:	 0
+	Charge score :	 0
+	Proportion of polar atoms: 	21.429
+	Alpha sphere density : 	1.839
+	Cent. of mass - Alpha Sphere max dist: 	5.309
+	Flexibility : 	0.226
+
+Pocket 41 :
+	Score : 	-0.112
+	Druggability Score : 	0.020
+	Number of Alpha Spheres : 	24
+	Total SASA : 	109.858
+	Polar SASA : 	19.286
+	Apolar SASA : 	90.572
+	Volume : 	317.188
+	Mean local hydrophobic density : 	18.300
+	Mean alpha sphere radius :	3.821
+	Mean alp. sph. solvent access : 	0.596
+	Apolar alpha sphere proportion : 	0.833
+	Hydrophobicity score:	25.500
+	Volume score: 	 2.625
+	Polarity score:	 1
+	Charge score :	 -1
+	Proportion of polar atoms: 	34.783
+	Alpha sphere density : 	3.421
+	Cent. of mass - Alpha Sphere max dist: 	11.447
+	Flexibility : 	0.235
+
+Pocket 42 :
+	Score : 	-0.124
+	Druggability Score : 	0.000
+	Number of Alpha Spheres : 	22
+	Total SASA : 	96.821
+	Polar SASA : 	63.008
+	Apolar SASA : 	33.814
+	Volume : 	253.909
+	Mean local hydrophobic density : 	4.000
+	Mean alpha sphere radius :	3.882
+	Mean alp. sph. solvent access : 	0.565
+	Apolar alpha sphere proportion : 	0.227
+	Hydrophobicity score:	-2.400
+	Volume score: 	 4.600
+	Polarity score:	 4
+	Charge score :	 1
+	Proportion of polar atoms: 	52.632
+	Alpha sphere density : 	2.732
+	Cent. of mass - Alpha Sphere max dist: 	5.941
+	Flexibility : 	0.414
+
+Pocket 43 :
+	Score : 	-0.137
+	Druggability Score : 	0.001
+	Number of Alpha Spheres : 	16
+	Total SASA : 	97.555
+	Polar SASA : 	32.343
+	Apolar SASA : 	65.212
+	Volume : 	308.561
+	Mean local hydrophobic density : 	10.000
+	Mean alpha sphere radius :	4.086
+	Mean alp. sph. solvent access : 	0.533
+	Apolar alpha sphere proportion : 	0.688
+	Hydrophobicity score:	16.875
+	Volume score: 	 4.000
+	Polarity score:	 5
+	Charge score :	 0
+	Proportion of polar atoms: 	42.857
+	Alpha sphere density : 	2.819
+	Cent. of mass - Alpha Sphere max dist: 	7.999
+	Flexibility : 	0.243
+
+Pocket 44 :
+	Score : 	-0.146
+	Druggability Score : 	0.010
+	Number of Alpha Spheres : 	28
+	Total SASA : 	145.951
+	Polar SASA : 	20.358
+	Apolar SASA : 	125.593
+	Volume : 	443.046
+	Mean local hydrophobic density : 	15.059
+	Mean alpha sphere radius :	3.842
+	Mean alp. sph. solvent access : 	0.505
+	Apolar alpha sphere proportion : 	0.607
+	Hydrophobicity score:	12.250
+	Volume score: 	 2.833
+	Polarity score:	 4
+	Charge score :	 -1
+	Proportion of polar atoms: 	42.308
+	Alpha sphere density : 	4.355
+	Cent. of mass - Alpha Sphere max dist: 	10.232
+	Flexibility : 	0.182
+
+Pocket 45 :
+	Score : 	-0.158
+	Druggability Score : 	0.001
+	Number of Alpha Spheres : 	34
+	Total SASA : 	141.226
+	Polar SASA : 	59.107
+	Apolar SASA : 	82.119
+	Volume : 	399.346
+	Mean local hydrophobic density : 	14.500
+	Mean alpha sphere radius :	4.045
+	Mean alp. sph. solvent access : 	0.527
+	Apolar alpha sphere proportion : 	0.471
+	Hydrophobicity score:	5.000
+	Volume score: 	 2.889
+	Polarity score:	 4
+	Charge score :	 0
+	Proportion of polar atoms: 	50.000
+	Alpha sphere density : 	3.931
+	Cent. of mass - Alpha Sphere max dist: 	11.290
+	Flexibility : 	0.219
+

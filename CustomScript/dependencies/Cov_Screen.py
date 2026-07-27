@@ -4,10 +4,12 @@ Cov_Screen.py — evaluate a saved LGBMRanker pkl on training + labels CSVs.
 Uses the same (Name × Warhead) query groups, warhead matching, and metrics as
 Training_Cov_Screen.py, but skips training and only runs inference + reporting.
 
-Hit counting is one row per label (Name + Residue + ResNum + Chain). By default
-a label is a hit if ANY training-matched warhead succeeds. With --perfect-match,
+Hit counting is one row per ligand base Name + Residue + ResNum + Chain.
+CovSite Names that differ only by warhead suffix (e.g. ...-Aldehyde vs
+...-Carbamate_amide_like) are collapsed to the same base Name. By default a
+label is a hit if ANY training-matched warhead succeeds. With --perfect-match,
 labels that list multiple Frankenstein warheads require EVERY training-matched
-warhead query group to hit.
+warhead query group to hit. There is at most one hit counted per base Name × site.
 
 Usage:
     python Cov_Screen.py \\
@@ -69,7 +71,9 @@ from Training_Cov_Screen import (
     _matching_training_warheads,
     _normalize_resnum,
     evaluate_predictions,
+    ligand_base_name,
     load_and_merge,
+    parse_frankenstein_warheads,
     summarize_eval_metrics,
     summarize_screen_metrics,
     analyze_residue_composition,
@@ -151,12 +155,12 @@ def filter_vs_site_eval(
 
 
 def build_name_warhead_counts(labels_csv: str) -> dict[str, int]:
-    """Frankenstein warhead count per ligand Name (for perfect-match in VS)."""
+    """Frankenstein warhead count per ligand base Name (for perfect-match in VS)."""
     labels = pd.read_csv(labels_csv, sep=",", engine="c", low_memory=False)
-    counts: dict[str, int] = {}
+    warhead_sets: dict[str, set[str]] = {}
 
     for _, row in labels.iterrows():
-        name = str(row["Name"]).strip().upper()
+        name = ligand_base_name(row["Name"]).strip().upper()
         frank = row.get("Frankenstein_Warhead", row.get("Warhead", ""))
         if pd.isna(frank) or not str(frank).strip():
             wh_set = (
@@ -164,13 +168,13 @@ def build_name_warhead_counts(labels_csv: str) -> dict[str, int]:
                 if pd.notna(row.get("Warhead")) else set()
             )
             wh_set.discard("")
-            n = len(wh_set) if wh_set else 1
         else:
-            n = len([w for w in str(frank).split(",") if w.strip()])
-            n = max(n, 1)
-        counts[name] = max(counts.get(name, 0), n)
+            wh_set = parse_frankenstein_warheads(frank)
+        if not wh_set:
+            wh_set = set()
+        warhead_sets.setdefault(name, set()).update(wh_set)
 
-    return counts
+    return {name: max(len(whs), 1) for name, whs in warhead_sets.items()}
 
 
 def _format_site_label(residue, resnum, chain) -> str:
@@ -207,11 +211,12 @@ def _check_warhead_coverage(
 
 def load_merged_for_vs(training_csv: str, labels_csv: str) -> pd.DataFrame:
     """
-    Load all training candidates for ligand Names in labels.
+    Load all training candidates for ligand base Names in labels.
 
     Labels supply Name + warhead matching only. Residue/ResNum/Chain in the labels
-    CSV are ignored. Every screened residue in each matched (Name × Warhead) group
-    is retained.
+    CSV are ignored. Names that differ only by CovSite warhead suffix are
+    collapsed to one ligand base name. Every screened residue in each matched
+    (base Name × Warhead) group is retained.
     """
     print("\n[INFO] VS load: all training candidates per ligand query group...")
     train_df = pd.read_csv(training_csv, sep=",", engine="c", low_memory=False)
@@ -219,20 +224,27 @@ def load_merged_for_vs(training_csv: str, labels_csv: str) -> pd.DataFrame:
 
     train_df["_name_upper"] = train_df["Name"].str.strip().str.upper()
     train_df["_warhead_lower"] = train_df["Warhead"].str.strip().str.lower()
+    train_df["_base_name"] = [
+        ligand_base_name(name, warhead).upper()
+        for name, warhead in zip(train_df["Name"], train_df["Warhead"])
+    ]
     train_df["Residue"] = train_df["Residue"].str.strip().str.upper()
     train_df["_resnum_str"] = train_df["ResNum"].map(_normalize_resnum)
     train_df["_chain_upper"] = train_df["Chain"].astype(str).str.strip().str.upper()
 
     label_df["_name_upper"] = label_df["Name"].str.strip().str.upper()
+    label_df["_base_name"] = label_df["Name"].map(
+        lambda value: ligand_base_name(value).upper()
+    )
 
     train_df = train_df[train_df["Residue"].isin(VALID_RESIDUES)].copy()
     train_df = train_df.drop_duplicates(
-        subset=["_name_upper", "Residue", "_resnum_str", "_chain_upper", "_warhead_lower"],
+        subset=["_base_name", "Residue", "_resnum_str", "_chain_upper", "_warhead_lower"],
         keep="first",
     )
 
     warheads_by_name: dict[str, list[str]] = (
-        train_df.groupby("_name_upper")["Warhead"]
+        train_df.groupby("_base_name")["Warhead"]
         .apply(lambda s: list(s.unique()))
         .to_dict()
     )
@@ -241,33 +253,36 @@ def load_merged_for_vs(training_csv: str, labels_csv: str) -> pd.DataFrame:
     unmatched_names: set[str] = set()
 
     for _, lrow in label_df.iterrows():
-        name = lrow["_name_upper"]
+        base_name = lrow["_base_name"]
         frank_wh = lrow.get("Frankenstein_Warhead", lrow.get("Warhead", ""))
 
-        matched_whs = _matching_training_warheads(name, frank_wh, warheads_by_name)
+        matched_whs = _matching_training_warheads(
+            base_name, frank_wh, warheads_by_name
+        )
         if not matched_whs:
-            unmatched_names.add(name)
+            unmatched_names.add(base_name)
             continue
 
-        name_warheads.setdefault(name, set()).update(matched_whs)
+        name_warheads.setdefault(base_name, set()).update(matched_whs)
 
     if not name_warheads:
         print("ERROR: No training rows matched any label Name. Check name/warhead formats.")
         sys.exit(1)
 
     pair_rows = [
-        {"_name_upper": name, "_warhead_lower": wh}
+        {"_base_name": name, "_warhead_lower": wh}
         for name, whs in sorted(name_warheads.items())
         for wh in sorted(whs)
     ]
     pairs_df = pd.DataFrame(pair_rows)
 
-    merged = train_df.merge(pairs_df, on=["_name_upper", "_warhead_lower"], how="inner")
-    merged["query_group"] = merged["_name_upper"] + "__" + merged["_warhead_lower"]
+    merged = train_df.merge(pairs_df, on=["_base_name", "_warhead_lower"], how="inner")
+    merged["query_group"] = merged["_base_name"] + "__" + merged["_warhead_lower"]
+    merged["_name_upper"] = merged["_base_name"]
     merged["target_residue_type"] = merged["Residue"]
 
     print(f"  Training rows (VS) : {len(merged):,}")
-    print(f"  Ligand Names       : {merged['_name_upper'].nunique():,}")
+    print(f"  Ligand base Names  : {merged['_base_name'].nunique():,}")
     print(f"  Query groups       : {merged['query_group'].nunique():,}")
     if unmatched_names:
         print(f"  Unmatched Names    : {len(unmatched_names):,}")
@@ -770,24 +785,29 @@ def print_vs_pred_score_results(
 
 def build_label_warhead_counts(labels_csv: str) -> dict[tuple[str, str, str, str], int]:
     """
-    Count Frankenstein warheads listed per label (same convention as baby_frank).
+    Count Frankenstein warheads listed per ligand base Name × site.
+
+    Names that differ only by CovSite warhead suffix are collapsed first.
     """
     labels = pd.read_csv(labels_csv, sep=",", engine="c", low_memory=False)
-    counts: dict[tuple[str, str, str, str], int] = {}
+    warhead_sets: dict[tuple[str, str, str, str], set[str]] = {}
 
     for _, row in labels.iterrows():
-        key = make_label_key(row["Name"], row["Residue"], row["ResNum"], row["Chain"])
+        base_name = ligand_base_name(row["Name"])
+        key = make_label_key(base_name, row["Residue"], row["ResNum"], row["Chain"])
         frank = row.get("Frankenstein_Warhead", row.get("Warhead", ""))
         if pd.isna(frank) or not str(frank).strip():
-            wh_set = {str(row.get("Warhead", "")).strip().lower()} if pd.notna(row.get("Warhead")) else set()
+            wh_set = (
+                {str(row.get("Warhead", "")).strip().lower()}
+                if pd.notna(row.get("Warhead"))
+                else set()
+            )
             wh_set.discard("")
-            n = len(wh_set) if wh_set else 1
         else:
-            n = len([w for w in str(frank).split(",") if w.strip()])
-            n = max(n, 1)
-        counts[key] = n
+            wh_set = parse_frankenstein_warheads(frank)
+        warhead_sets.setdefault(key, set()).update(wh_set)
 
-    return counts
+    return {key: max(len(whs), 1) for key, whs in warhead_sets.items()}
 
 
 def enrich_query_group_eval(
@@ -795,11 +815,12 @@ def enrich_query_group_eval(
     merged: pd.DataFrame,
 ) -> pd.DataFrame:
     """Attach label site + warhead metadata to per-query-group metrics."""
+    name_col = "_base_name" if "_base_name" in merged.columns else "_name_upper"
     if {"tgt_residue", "tgt_resnum", "tgt_chain"}.issubset(merged.columns):
         meta = (
             merged.groupby("query_group")
             .agg(
-                Name=("_name_upper", "first"),
+                Name=(name_col, "first"),
                 Residue=("tgt_residue", "first"),
                 ResNum=("tgt_resnum", "first"),
                 Chain=("tgt_chain", "first"),
@@ -814,7 +835,7 @@ def enrich_query_group_eval(
         meta = (
             targets.groupby("query_group")
             .agg(
-                Name=("_name_upper", "first"),
+                Name=(name_col, "first"),
                 Residue=("Residue", "first"),
                 ResNum=("ResNum", "first"),
                 Chain=("Chain", "first"),
@@ -822,6 +843,7 @@ def enrich_query_group_eval(
             )
             .reset_index()
         )
+    meta["Name"] = meta["Name"].map(lambda value: ligand_base_name(value).upper())
     return eval_df.merge(meta, on="query_group", how="left")
 
 
@@ -832,20 +854,24 @@ def aggregate_label_eval_rows(
     strict_warhead_coverage: bool = False,
 ) -> pd.DataFrame:
     """
-    Collapse warhead-level (query-group) rows to one row per label site.
+    Collapse warhead-level (query-group) rows to one row per ligand base site.
 
-    Default: label hits if any matched warhead query group hits.
-    perfect_match + label lists multiple Frankenstein warheads: all matched
-    warhead query groups must hit (same as baby_frank).
+    Names are warhead-suffix-stripped first, so ...-Aldehyde and
+    ...-Carbamate_amide_like contribute to the same label. Default: label hits
+    if any matched warhead query group hits. perfect_match + label lists
+    multiple Frankenstein warheads: all matched warhead query groups must hit.
     """
     if eval_df.empty:
         return eval_df.copy()
+
+    work = eval_df.copy()
+    work["Name"] = work["Name"].map(lambda value: ligand_base_name(value).upper())
 
     rows_out: list[dict] = []
     incomplete_labels = 0
 
     group_cols = ["Name", "Residue", "ResNum", "Chain"]
-    for key, grp in eval_df.groupby(group_cols, sort=True):
+    for key, grp in work.groupby(group_cols, sort=True):
         label_key = make_label_key(key[0], key[1], key[2], key[3])
         label_wh_count = label_wh_counts.get(label_key, 1)
         n_matched = len(grp)
@@ -1237,6 +1263,10 @@ def load_unlabeled_candidates(training_csv: str) -> pd.DataFrame:
     df = df.copy()
     df["_name_upper"] = df["Name"].astype(str).str.strip().str.upper()
     df["_warhead_lower"] = df["Warhead"].astype(str).str.strip().str.lower()
+    df["_base_name"] = [
+        ligand_base_name(name, warhead).upper()
+        for name, warhead in zip(df["Name"], df["Warhead"])
+    ]
     df["Residue"] = df["Residue"].astype(str).str.strip().str.upper()
     df["_resnum_str"] = df["ResNum"].map(_normalize_resnum)
     df["_chain_upper"] = df["Chain"].astype(str).str.strip().str.upper()
@@ -1244,12 +1274,13 @@ def load_unlabeled_candidates(training_csv: str) -> pd.DataFrame:
     df = df[df["Residue"].isin(VALID_RESIDUES)].copy()
     df = df.drop_duplicates(
         subset=[
-            "_name_upper", "Residue", "_resnum_str",
+            "_base_name", "Residue", "_resnum_str",
             "_chain_upper", "_warhead_lower",
         ],
         keep="first",
     )
-    df["query_group"] = df["_name_upper"] + "__" + df["_warhead_lower"]
+    df["query_group"] = df["_base_name"] + "__" + df["_warhead_lower"]
+    df["_name_upper"] = df["_base_name"]
     if df.empty:
         sys.exit("[ERROR] No supported nucleophile candidate rows were found.")
     return df

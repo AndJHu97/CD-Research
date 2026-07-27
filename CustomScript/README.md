@@ -35,11 +35,19 @@ Headers are detected **case-insensitively**.
 | `smiles` **or** `LigID` | yes | SMILES preferred; LigID resolved from `--pdb-dir` or RCSB |
 | `name` | no | Query-group name; auto-built as `PDB-SMILES-warhead` if omitted |
 | `residue`, `resnum`, `chain` | no | Target site; all three required together if any provided |
+| `warhead` / `Frankenstein_Warhead` | no | Optional; copied as-is to labels `Frankenstein_Warhead` for Cov_Screen matching / `--perfect-match` (comma-separated allowed). `Frankenstein_Warhead` is preferred when both columns exist. |
 
 Supported labeled nucleophiles: **CYS, SER, THR, TYR, LYS, HIS**.
 
 If a target is missing or unsupported (e.g. GLU), CovSite warns, treats that row
 as unlabeled (score-only), and continues.
+
+When `Warhead` / `Frankenstein_Warhead` is provided, CovSite copies that exact
+text into `labels.csv` as `Frankenstein_Warhead` (no conversion). Candidate
+feature rows still use auto-detected warhead names from SMILES. Cov_Screen
+matches those candidate `Warhead` values against the label field
+(comma-separated membership). Use `--perfect-match` to require every listed
+warhead that matches a candidate to hit.
 
 Multiple target sites for the same PDB + SMILES are supported. CovSite makes
 `Name` unique per site (suffix like `-ACYS25`) so each Name × Warhead group still
@@ -71,7 +79,8 @@ Useful options:
 | `--no-shap` | Disable SHAP export |
 
 Column overrides: `--pdb-column`, `--smiles-column`, `--ligid-column`,
-`--name-column`, `--residue-column`, `--resnum-column`, `--chain-column`.
+`--name-column`, `--residue-column`, `--resnum-column`, `--chain-column`,
+`--warhead-column`.
 
 ## Screen-only mode
 

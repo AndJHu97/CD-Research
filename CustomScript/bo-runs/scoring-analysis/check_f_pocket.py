@@ -3,22 +3,25 @@
 Run fpocket on PDBs referenced in a CovSite label-results CSV and compare
 pocket detection against CovSite hits (hit_at_top_pct).
 
+A normal run already includes top-3 metrics, all-pocket (--fix) enrichment,
+search-space reduction (when n_residues is present), disagreement exports, and
+top-1 descriptor analysis. --fix / --top-3-flag / --top-1-analysis remain
+available as optional post-process modes on existing detail CSVs.
+
 Outputs:
   - detail CSV: per-label fpocket pocket rank, target-in-pocket flags, nucleophilic
     residue counts, and fpocket descriptors (score, druggability, volume, etc.)
-  - summary CSV: hit rates (top-1 / any pocket), nucleophilic stats (when_hit and
-    all_labels scope), per-residue-type accuracy, and fpocket-vs-CovSite disagreement
+  - summary CSV: hit rates (top-1 / top-3 / any pocket), nucleophilic stats
+    (when_hit and all_labels scope), per-residue-type accuracy, and
+    fpocket-vs-CovSite disagreement
   - fpocket_found CSVs (top-1 and overall): labels fpocket finds but CovSite misses
   - covsite_found CSVs (top-1 and overall): labels CovSite finds but fpocket misses
-
-  --top-1-analysis compares fpocket rank-1 pockets (hits) vs target-containing
-  pockets when fpocket misses rank-1 but CovSite hits and fpocket finds the site
-  elsewhere (overall hit).
+  - top1 analysis CSVs: rank-1 hit pockets vs recovered target pockets
 
 Usage:
     python check_f_pocket.py test_label_results.csv --pdb-dir /path/to/pdbs
     python check_f_pocket.py test_label_results.csv --pdb-dir ./pdbs \\
-        --output-dir ./fpocket_analysis --prefix test --top-3-flag
+        --output-dir ./fpocket_analysis --prefix test
     python check_f_pocket.py --fix \\
         --detail-csv test_label_results_fpocket_detail.csv \\
         --summary-csv test_label_results_fpocket_summary.csv \\
@@ -1213,9 +1216,16 @@ def run_analysis(
         detail_rows.append(detail_row)
 
     detail = pd.DataFrame(detail_rows)
-    if include_fix:
+    if include_fix and "n_residues" in detail.columns:
         detail = add_search_space_reduction_columns(detail)
-    summary = build_summary(detail, include_top3=include_top3 or include_fix, fix_mode=include_fix)
+    elif include_fix:
+        print(
+            "[WARN] n_residues not present in labels CSV; "
+            "search-space reduction columns were skipped"
+        )
+    summary = build_summary(
+        detail, include_top3=include_top3 or include_fix, fix_mode=include_fix
+    )
 
     cov_hit = detail["covsite_hit_at_top_pct"].astype(int)
     fpocket_found_top1 = subset_detail(
@@ -1241,13 +1251,14 @@ def run_analysis(
 
     detail_path = out_path / f"{prefix}_fpocket_detail.csv"
     summary_path = out_path / f"{prefix}_fpocket_summary.csv"
+    covsite_found_top1_path = out_path / f"{prefix}_covsite_found_top1.csv"
     detail.to_csv(detail_path, index=False)
     summary.to_csv(summary_path, index=False)
     fpocket_found_top1.to_csv(out_path / f"{prefix}_fpocket_found_top1.csv", index=False)
     fpocket_found_overall.to_csv(
         out_path / f"{prefix}_fpocket_found_overall.csv", index=False
     )
-    covsite_found_top1.to_csv(out_path / f"{prefix}_covsite_found_top1.csv", index=False)
+    covsite_found_top1.to_csv(covsite_found_top1_path, index=False)
     covsite_found_overall.to_csv(
         out_path / f"{prefix}_covsite_found_overall.csv", index=False
     )
@@ -1270,6 +1281,14 @@ def run_analysis(
               + (" ..." if len(set(missing_pdbs)) > 10 else ""))
     print(f"Wrote: {detail_path}")
     print(f"Wrote: {summary_path}")
+
+    print("\n[INFO] Running top-1 analysis on written detail CSV...")
+    run_top1_analysis(
+        detail_csv=str(detail_path),
+        output_dir=str(out_path),
+        prefix=prefix,
+        covsite_found_top1_csv=str(covsite_found_top1_path),
+    )
 
 
 def _resolve_summary_csv(detail_csv: str, summary_csv: Optional[str]) -> str:
@@ -1416,14 +1435,14 @@ def parse_args() -> argparse.Namespace:
         "--top-3-flag",
         action="store_true",
         help=(
-            "Include top-3 pocket metrics (hit in ranks 1-3; nucleophilic union "
-            "across top 3 pockets). With --detail-csv, post-process existing outputs."
+            "Optional post-process only: add top-3 pocket metrics to an existing "
+            "detail CSV (--detail-csv). Full runs already include top-3 metrics."
         ),
     )
     parser.add_argument(
         "--detail-csv",
         default=None,
-        help="Existing detail CSV to enrich (use with --top-3-flag)",
+        help="Existing detail CSV to enrich/analyze (post-process modes)",
     )
     parser.add_argument(
         "--summary-csv",
@@ -1434,18 +1453,19 @@ def parse_args() -> argparse.Namespace:
         "--fix",
         action="store_true",
         help=(
-            "Use all-pocket nucleophilic union for overall counts; add n_residues "
-            "baseline and search-space reduction (top1/top3/all pockets / n_residues). "
-            "With --detail-csv, post-process existing outputs (requires labels CSV)."
+            "Optional post-process only: apply all-pocket nucleophilic union, "
+            "n_residues baseline, and search-space reduction to an existing "
+            "detail CSV (--detail-csv; requires labels CSV). Full runs already "
+            "include these metrics when possible."
         ),
     )
     parser.add_argument(
         "--top-1-analysis",
         action="store_true",
         help=(
-            "Compare fpocket rank-1 pocket descriptors (hits) vs target-pocket "
-            "descriptors when fpocket misses rank-1 but CovSite hits and fpocket "
-            "finds the site overall. Requires --detail-csv."
+            "Optional post-process only: compare fpocket rank-1 pocket "
+            "descriptors vs recovered target pockets. Requires --detail-csv. "
+            "Full runs already write these analysis CSVs."
         ),
     )
     parser.add_argument(
@@ -1506,6 +1526,7 @@ def main() -> None:
     output_dir = args.output_dir or str(labels_path.parent)
     prefix = args.prefix or labels_path.stem
 
+    # Full runs always include top-3, --fix enrichment, and top-1 analysis.
     run_analysis(
         labels_csv=str(labels_path),
         pdb_dir=args.pdb_dir,
@@ -1516,8 +1537,8 @@ def main() -> None:
         recursive_pdb=args.recursive_pdb,
         force_fpocket=args.force,
         limit=args.limit,
-        include_top3=args.top_3_flag or args.fix,
-        include_fix=args.fix,
+        include_top3=True,
+        include_fix=True,
     )
 
 

@@ -190,6 +190,7 @@ ELECTROPHILE_WARHEADS = [
     ("Nitro-activated aryl halide SNAr (para)", "[c]1([N+](=O)[O-])ccc([F,Cl,Br,I])cc1", 0, "soft"),
 
     # Sulfonyl-based
+    ("Fluorosulfate", "[OX2][SX4](=O)(=O)F", 1, "borderline"),  # sulfur of R–OSO2F / SuFEx
     ("Sulfonyl fluoride", "S(=O)(=O)F", 0, "borderline"),      # sulfur
     ("Sulfonamide (activated)", "[NX3][S](=O)(=O)", 1, "borderline"),  # sulfur as reactive center
 

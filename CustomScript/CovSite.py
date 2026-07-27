@@ -7,7 +7,11 @@ calculations, Frankenstein ranking, orbital filters, HSAB filters, and PROPKA.
 
 Input CSV columns are detected case-insensitively:
   required: pdb/pdb_id/protein pdb and either smiles or LigID
-  optional: name, residue, resnum, chain
+  optional: name, residue, resnum, chain, warhead / Frankenstein_Warhead
+
+When Warhead (or Frankenstein_Warhead) is provided, that exact text is written
+to labels.csv as Frankenstein_Warhead for Cov_Screen matching / --perfect-match.
+Warheads are still auto-detected from SMILES for candidate feature rows.
 
 When a row has no SMILES, LigID is resolved from a local SDF/PDB in --pdb-dir
 or downloaded from the RCSB ligand service.
@@ -172,6 +176,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--residue-column", default=None)
     parser.add_argument("--resnum-column", default=None)
     parser.add_argument("--chain-column", default=None)
+    parser.add_argument(
+        "--warhead-column",
+        default=None,
+        help=(
+            "Optional input column copied as-is to labels Frankenstein_Warhead "
+            "(comma-separated allowed). If omitted, auto-detects "
+            "Frankenstein_Warhead / Warhead columns."
+        ),
+    )
     parser.add_argument(
         "--workers",
         type=int,
@@ -1047,6 +1060,21 @@ def main() -> None:
         False,
     )
     chain_col = detect_column(raw, args.chain_column, ("chain",), False)
+    frank_warhead_col = detect_column(
+        raw,
+        args.warhead_column,
+        ("frankenstein_warhead", "frankenstein warhead"),
+        False,
+    )
+    warhead_col = None
+    if frank_warhead_col is None:
+        warhead_col = detect_column(
+            raw,
+            args.warhead_column,
+            ("warhead",),
+            False,
+        )
+    requested_warhead_col = frank_warhead_col or warhead_col
 
     work = raw.copy()
     work["_source_row"] = work.index
@@ -1063,6 +1091,16 @@ def main() -> None:
     work["_target_chain"] = (
         work[chain_col].map(clean_text).str.upper() if chain_col else ""
     )
+    work["_requested_warheads"] = (
+        work[requested_warhead_col].map(clean_text)
+        if requested_warhead_col
+        else ""
+    )
+    if requested_warhead_col:
+        print(
+            f"[CovSite] Using input warhead column {requested_warhead_col!r} "
+            "as labels Frankenstein_Warhead (exact text; no conversion)"
+        )
     missing_ligand = (work["_smiles"] == "") & (work["_ligid"] == "")
     if (work["_pdb_id"] == "").any() or missing_ligand.any():
         bad = work.index[
@@ -1399,6 +1437,10 @@ def main() -> None:
             )
             continue
 
+        label_frankenstein_warhead = clean_text(
+            input_row.get("_requested_warheads", "")
+        )
+
         for warhead, descriptors in chemistry:
             name = make_base_name(
                 input_row,
@@ -1479,7 +1521,9 @@ def main() -> None:
                         "Residue": input_row["_target_residue"],
                         "ResNum": normalized_resnum(input_row["_target_resnum"]),
                         "Chain": input_row["_target_chain"],
-                        "Frankenstein_Warhead": warhead["Warhead"],
+                        "Frankenstein_Warhead": (
+                            label_frankenstein_warhead or warhead["Warhead"]
+                        ),
                         "electrophile_smiles": smiles,
                         "PDB_ID": pdb_id,
                         "LigID": input_row["_ligid"],
