@@ -29,6 +29,9 @@ Usage:
     python check_f_pocket.py --top-1-analysis \\
         --detail-csv test_label_results_fpocket_detail.csv \\
         --covsite-found-top1-csv test_label_results_covsite_found_top1.csv
+
+
+    python check_f_pocket.py test_label_results.csv --pdb-dir ../../Existing_Structures --output-dir ./fpocket_analysis --prefix test --work-dir fpocket_runs
 """
 
 from __future__ import annotations
