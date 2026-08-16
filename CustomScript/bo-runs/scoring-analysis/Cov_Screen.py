@@ -79,6 +79,7 @@ from Training_Cov_Screen import (
     analyze_residue_composition,
     print_residue_composition,
     export_shap_csvs,
+    unmatched_warhead_label_record,
 )
 
 
@@ -238,10 +239,16 @@ def load_merged_for_vs(training_csv: str, labels_csv: str) -> pd.DataFrame:
     )
 
     train_df = train_df[train_df["Residue"].isin(VALID_RESIDUES)].copy()
-    train_df = train_df.drop_duplicates(
-        subset=["_base_name", "Residue", "_resnum_str", "_chain_upper", "_warhead_lower"],
-        keep="first",
-    )
+    dedup_subset = [
+        "_base_name", "Residue", "_resnum_str", "_chain_upper", "_warhead_lower",
+    ]
+    if "electrophile_smiles" in train_df.columns:
+        train_df["_elec_smiles_key"] = (
+            train_df["electrophile_smiles"]
+            .map(lambda v: "" if pd.isna(v) else str(v).strip().casefold())
+        )
+        dedup_subset.append("_elec_smiles_key")
+    train_df = train_df.drop_duplicates(subset=dedup_subset, keep="first")
 
     warheads_by_name: dict[str, list[str]] = (
         train_df.groupby("_base_name")["Warhead"]
@@ -250,7 +257,8 @@ def load_merged_for_vs(training_csv: str, labels_csv: str) -> pd.DataFrame:
     )
 
     name_warheads: dict[str, set[str]] = {}
-    unmatched_names: set[str] = set()
+    unmatched_warhead_labels: list[dict] = []
+    seen_unmatched: set[str] = set()
 
     for _, lrow in label_df.iterrows():
         base_name = lrow["_base_name"]
@@ -260,7 +268,17 @@ def load_merged_for_vs(training_csv: str, labels_csv: str) -> pd.DataFrame:
             base_name, frank_wh, warheads_by_name
         )
         if not matched_whs:
-            unmatched_names.add(base_name)
+            # One audit row per base Name (VS ignores site columns).
+            if base_name not in seen_unmatched:
+                seen_unmatched.add(base_name)
+                unmatched_warhead_labels.append(
+                    unmatched_warhead_label_record(
+                        lrow,
+                        base_name,
+                        frank_wh,
+                        warheads_by_name.get(base_name, []),
+                    )
+                )
             continue
 
         name_warheads.setdefault(base_name, set()).update(matched_whs)
@@ -284,9 +302,16 @@ def load_merged_for_vs(training_csv: str, labels_csv: str) -> pd.DataFrame:
     print(f"  Training rows (VS) : {len(merged):,}")
     print(f"  Ligand base Names  : {merged['_base_name'].nunique():,}")
     print(f"  Query groups       : {merged['query_group'].nunique():,}")
-    if unmatched_names:
-        print(f"  Unmatched Names    : {len(unmatched_names):,}")
+    if unmatched_warhead_labels:
+        print(f"  Unmatched Names    : {len(unmatched_warhead_labels):,}")
+        preview = ", ".join(
+            str(rec.get("Name") or rec.get("base_name") or "?")
+            for rec in unmatched_warhead_labels[:5]
+        )
+        suffix = "..." if len(unmatched_warhead_labels) > 5 else ""
+        print(f"    e.g. {preview}{suffix}")
 
+    merged.attrs["unmatched_warhead_labels"] = unmatched_warhead_labels
     return merged
 
 
@@ -1272,13 +1297,18 @@ def load_unlabeled_candidates(training_csv: str) -> pd.DataFrame:
     df["_chain_upper"] = df["Chain"].astype(str).str.strip().str.upper()
     df["pdb_id"] = df["_name_upper"].str.split("-").str[0]
     df = df[df["Residue"].isin(VALID_RESIDUES)].copy()
-    df = df.drop_duplicates(
-        subset=[
-            "_base_name", "Residue", "_resnum_str",
-            "_chain_upper", "_warhead_lower",
-        ],
-        keep="first",
-    )
+    dedup_subset = [
+        "_base_name", "Residue", "_resnum_str",
+        "_chain_upper", "_warhead_lower",
+    ]
+    # Keep stereo / SMILES variants that share a CovSite Name (stereo stripped).
+    if "electrophile_smiles" in df.columns:
+        df["_elec_smiles_key"] = (
+            df["electrophile_smiles"]
+            .map(lambda v: "" if pd.isna(v) else str(v).strip().casefold())
+        )
+        dedup_subset.append("_elec_smiles_key")
+    df = df.drop_duplicates(subset=dedup_subset, keep="first")
     df["query_group"] = df["_base_name"] + "__" + df["_warhead_lower"]
     df["_name_upper"] = df["_base_name"]
     if df.empty:
@@ -1556,8 +1586,16 @@ def main() -> None:
         merged = load_unlabeled_candidates(args.training)
     else:
         merged = load_and_merge(args.training, args.labels)
+    unmatched_warhead_labels = list(
+        merged.attrs.get("unmatched_warhead_labels", [])
+    )
     n_groups = merged["query_group"].nunique()
     print(f"\n[INFO] Query groups to score: {n_groups:,}")
+    if unmatched_warhead_labels:
+        print(
+            f"[INFO] Unmatched Frankenstein warhead labels "
+            f"(excluded from hit/miss): {len(unmatched_warhead_labels):,}"
+        )
 
     label_wh_counts = (
         build_label_warhead_counts(args.labels)
@@ -1767,6 +1805,8 @@ def main() -> None:
             n_groups if (vs_mode or score_only_mode) else len(eval_qg_df)
         ),
         "n_labels": int(len(eval_label_df)),
+        "n_unmatched_warhead_labels": len(unmatched_warhead_labels),
+        "unmatched_warhead_labels": unmatched_warhead_labels,
         "overall": overall,
         "per_residue": per_res,
         "per_residue_accuracy": per_residue_accuracy_df.to_dict(orient="records"),
@@ -1870,6 +1910,12 @@ def main() -> None:
 
     if args.export_summary:
         export_results_json(summary, args.export_summary)
+        if unmatched_warhead_labels:
+            unmatched_path = Path(args.export_summary).with_name(
+                Path(args.export_summary).stem + "_unmatched_warheads.csv"
+            )
+            pd.DataFrame(unmatched_warhead_labels).to_csv(unmatched_path, index=False)
+            print(f"[INFO] Unmatched warhead labels exported → {unmatched_path}")
 
     print("Done.")
 

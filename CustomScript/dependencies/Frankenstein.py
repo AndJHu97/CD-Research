@@ -149,11 +149,19 @@ ELECTROPHILE_WARHEADS = [
     # Michael acceptors
     ("Alpha-beta unsaturated carbonyl (Michael acceptor)", "[CX3](=O)[CX3]=[CX3]", 3, "soft"),  # β-carbon (index 3 in SMARTS match = C(=O)-C=C pattern where β is last)
     ("Acrylamide warhead", "C=CC(=O)N", 0, "soft"),  # β-carbon of C=CC
+    # α-Cyano substitution raises Michael acceptor reactivity vs unsubstituted acrylamide
+    ("Cyano-acrylamide warhead", "C=C(C#N)C(=O)N", 0, "soft"),  # β-carbon of C=C(CN)C(=O)N
     ("Propiolamide warhead", "[CX2H1]#[CX2]C(=O)[NX3H]", 0, "soft"),# β-carbon of C#CC (alkynyl amide Michael acceptor)
+    # Ester-linked alkynyl Michael acceptor; more hydrolytically labile than propiolamide
+    ("Propiolate ester warhead", "[CX2H1]#[CX2]C(=O)O[#6]", 0, "soft"),  # β-carbon of C#CC(=O)OR
+    ("Maleimide", "[NX3]1C(=O)C=CC1=O", 3, "soft"),  # cyclic imide Michael acceptor; alkene carbon
     ("Ketoamide (Michael acceptor)", "[NX3][CX3](=O)[CX3]=[CX3]", 2, "soft"),  # β-carbon in amide-conjugated Michael acceptor
     ("Vinyl sulfone", "C=C[SX4](=O)(=O)[#6]", 0, "soft"),        # carbon on both sides
     ("Vinyl sulfonate ester", "C=C[SX4](=O)(=O)O[#6]", 0, "soft"),  # sulfur bonded to alkoxy leaving group
     ("Vinylsulfonamide", "C=C[SX4](=O)(=O)[NX3]", 0, "soft"),    # nitrogen on sulfonyl
+    # Ortho-quinone: soft Michael acceptor at β-alkene (Cys); distinct from Activated ketone
+    # which flags the carbonyl carbon of 1,2-dicarbonyls.
+    ("1,2-Benzoquinone (ortho-quinone)", "O=[#6]1[#6](=O)[#6]=[#6][#6]=[#6]1", 4, "soft"),
 
     # Carbonyl-based electrophiles
     ("Aldehyde", "[CX3H1;!R](=O)", 0, "hard"),      # carbonyl carbon
@@ -197,8 +205,11 @@ ELECTROPHILE_WARHEADS = [
     # Organophosphorus-based
     ("Phosphonyl fluoride (phosphonofluoridate)", "[P](=O)(F)(O[#6])[#6]", 0, "hard"),  # phosphorus center
 
-    # Disulfides
-    ("Disulfide", "[SX2][SX2]", 0, "soft"),              # sulfur
+    # Disulfides / thiol exchange (reversible Cys covalent modalities)
+    ("Disulfide", "[SX2][SX2]", 0, "soft"),              # preformed S–S; sulfur
+    # Free thiol for in situ disulfide exchange (e.g. tethering); not electrophilic
+    # in the classic sense, but a legitimate reversible Cys covalent handle
+    ("Free thiol (disulfide exchange)", "[SX2H1]", 0, "soft"),  # -SH sulfur
 
     # Lactones/lactams (strained rings)
     ("Beta-lactone", "C1OC(=O)C1", 2, "hard"),  # carbonyl carbon in ring
@@ -254,6 +265,23 @@ ELECTROPHILE_WARHEADS.extend([
     ("Alkyl halide (Cl,Br,I)", "[CX4][Cl,Br,I]", 0, "soft"),
     ("Carbodiimide", "N=C=N", 1, "hard"),
     ("Thiirane (episulfide)", "C1CS1", 0, "soft"),
+])
+
+# Weak-tier warheads confirmed by Petri et al. (2020, EJMC 207:112836) GSH-reactivity
+# and kinase inhibition data — included in their 24-probe covalent fragment library
+# and NOT the paper's noncovalent control (which is the bare 3,5-bis(CF3)phenyl
+# scaffold with no warhead at all). These showed low-but-nonzero reactivity
+# (local EPI 0.148–0.581 across the full library; see their Fig. 1 / Table S1),
+# so they're tiered "weak" rather than excluded outright.
+ELECTROPHILE_WARHEADS.extend([
+  
+    ("Vinylarene (unactivated styrene-type)", "[c][CX3H1]=[CX3H2]", 2, "weak"),
+    
+
+    ("Boc-hydrazone (masked, weak)", "[NX3H1](C(=O)O[CX4](C)(C)C)[NX2]=[CX3]", 3, "weak"),
+
+    ("CF3-flanked aryl fluoride (inductively activated)",
+     "Fc1cc(C(F)(F)F)cc(C(F)(F)F)c1", 0, "weak"),
 ])
 
 

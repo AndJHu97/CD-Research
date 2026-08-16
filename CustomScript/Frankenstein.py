@@ -154,6 +154,9 @@ ELECTROPHILE_WARHEADS = [
     ("Vinyl sulfone", "C=C[SX4](=O)(=O)[#6]", 0, "soft"),        # carbon on both sides
     ("Vinyl sulfonate ester", "C=C[SX4](=O)(=O)O[#6]", 0, "soft"),  # sulfur bonded to alkoxy leaving group
     ("Vinylsulfonamide", "C=C[SX4](=O)(=O)[NX3]", 0, "soft"),    # nitrogen on sulfonyl
+    # Ortho-quinone: soft Michael acceptor at β-alkene (Cys); distinct from Activated ketone
+    # which flags the carbonyl carbon of 1,2-dicarbonyls.
+    ("1,2-Benzoquinone (ortho-quinone)", "O=[#6]1[#6](=O)[#6]=[#6][#6]=[#6]1", 4, "soft"),
 
     # Carbonyl-based electrophiles
     ("Aldehyde", "[CX3H1;!R](=O)", 0, "hard"),      # carbonyl carbon

@@ -442,22 +442,80 @@ def ligand_base_name(name: object, warhead: object = None) -> str:
     return text
 
 
+def strip_warhead_instance_tag(warhead: object) -> str:
+    """
+    Remove Frankenstein instance suffixes like ' [atom 15; instance 2]'.
+
+    Matching uses the bare warhead name so labels without instance tags still
+    match multi-instance candidate Warhead strings.
+    """
+    if warhead is None or (isinstance(warhead, float) and pd.isna(warhead)):
+        return ""
+    text = str(warhead).strip()
+    if not text:
+        return ""
+    return re.sub(r"\s*\[atom[^\]]*\]", "", text, flags=re.IGNORECASE).strip()
+
+
 def warhead_matches(training_warhead: str, frankenstein_warhead: str) -> bool:
     """
     Match training warhead against (possibly comma-separated)
     Frankenstein_Warhead field from labels CSV.
+
+    Candidate Warhead instance tags ([atom N; instance M]) are stripped before
+    comparison so they match bare label names.
+
+    Warhead names may themselves contain commas (e.g. 'Alkyl halide (Cl,Br,I)').
+    Matching order:
+      1) exact full-string match
+      2) training name as a whole comma-separated token in the label field
+      3) legacy naive split (best-effort for simple lists)
     """
     if pd.isna(frankenstein_warhead) or pd.isna(training_warhead):
         return False
-    tw = training_warhead.strip().lower()
-    fw_list = [w.strip().lower() for w in str(frankenstein_warhead).split(",")]
+    tw = strip_warhead_instance_tag(training_warhead).lower()
+    if not tw:
+        return False
+    frank = strip_warhead_instance_tag(frankenstein_warhead).lower()
+    if not frank:
+        return False
+    if tw == frank:
+        return True
+    # Token match so comma-containing names still work inside multi-warhead lists.
+    token_pat = re.compile(
+        rf"(?:^|,)\s*{re.escape(tw)}\s*(?:,|$)"
+    )
+    if token_pat.search(frank):
+        return True
+    fw_list = [
+        strip_warhead_instance_tag(w).lower()
+        for w in str(frankenstein_warhead).split(",")
+        if strip_warhead_instance_tag(w)
+    ]
     return tw in fw_list
 
 
 def parse_frankenstein_warheads(raw) -> set[str]:
+    """
+    Parse Frankenstein_Warhead into a set of lowercased bare names.
+
+    A single warhead name may contain commas; always keep the unsplit name so
+    those warheads are preserved alongside any comma-separated list parsing.
+    """
     if pd.isna(raw):
         return set()
-    return {w.strip().lower() for w in str(raw).split(",") if w.strip()}
+    text = str(raw).strip()
+    if not text:
+        return set()
+    full = strip_warhead_instance_tag(text).lower()
+    parts = {
+        strip_warhead_instance_tag(w).lower()
+        for w in text.split(",")
+        if strip_warhead_instance_tag(w)
+    }
+    if full:
+        parts.add(full)
+    return parts
 
 
 def _normalize_resnum(val) -> str:
@@ -484,6 +542,62 @@ def _matching_training_warheads(
         if warhead_matches(wh, frankenstein_raw):
             matched.append(wh.strip().lower())
     return matched
+
+
+def _clean_label_field(row, *keys: str) -> str:
+    for key in keys:
+        if key in row.index:
+            value = row.get(key)
+            if value is None or (isinstance(value, float) and pd.isna(value)):
+                continue
+            text = str(value).strip()
+            if text and text.lower() != "nan":
+                return text
+    return ""
+
+
+def unmatched_warhead_label_record(
+    lrow,
+    base_name: str,
+    frank_wh,
+    available_warheads: list[str],
+) -> dict:
+    """
+    One label row with no training Warhead matching Frankenstein_Warhead.
+
+    These are excluded from hit/miss denominators; recorded for auditing.
+    """
+    frank_text = ""
+    if frank_wh is not None and not (isinstance(frank_wh, float) and pd.isna(frank_wh)):
+        frank_text = str(frank_wh).strip()
+    available = [str(w).strip() for w in available_warheads if str(w).strip()]
+    name = _clean_label_field(lrow, "Name") or base_name
+    pdb_id = _clean_label_field(lrow, "PDB_ID", "protein pdb", "pdb")
+    if not pdb_id and base_name:
+        pdb_id = base_name.split("-", 1)[0]
+    detail = (
+        f"No training Warhead matched Frankenstein_Warhead={frank_text!r}"
+    )
+    if available:
+        detail += f"; available training warheads: {', '.join(available)}"
+    else:
+        detail += "; no training rows found for this ligand base Name"
+    return {
+        "Name": name,
+        "base_name": base_name,
+        "PDB_ID": pdb_id,
+        "LigID": _clean_label_field(lrow, "LigID"),
+        "electrophile_smiles": _clean_label_field(
+            lrow, "electrophile_smiles", "smiles"
+        ),
+        "Residue": _clean_label_field(lrow, "Residue"),
+        "ResNum": _normalize_resnum(lrow["ResNum"]) if "ResNum" in lrow.index else "",
+        "Chain": _clean_label_field(lrow, "Chain"),
+        "Frankenstein_Warhead": frank_text,
+        "available_training_warheads": ", ".join(available),
+        "Reason": "unmatched_frankenstein_warhead",
+        "Detail": detail,
+    }
 
 
 # ─────────────────────────────────────────────
@@ -525,10 +639,17 @@ def load_and_merge(training_csv: str, labels_csv: str) -> pd.DataFrame:
     )
 
     train_df = train_df[train_df["Residue"].isin(VALID_RESIDUES)].copy()
-    train_df = train_df.drop_duplicates(
-        subset=["_base_name", "Residue", "_resnum_str", "_chain_upper", "_warhead_lower"],
-        keep="first",
-    )
+    dedup_subset = [
+        "_base_name", "Residue", "_resnum_str", "_chain_upper", "_warhead_lower",
+    ]
+    # Keep stereo / SMILES variants that share a CovSite Name (stereo stripped).
+    if "electrophile_smiles" in train_df.columns:
+        train_df["_elec_smiles_key"] = (
+            train_df["electrophile_smiles"]
+            .map(lambda v: "" if pd.isna(v) else str(v).strip().casefold())
+        )
+        dedup_subset.append("_elec_smiles_key")
+    train_df = train_df.drop_duplicates(subset=dedup_subset, keep="first")
 
     warheads_by_name: dict[str, list[str]] = (
         train_df.groupby("_base_name")["Warhead"]
@@ -538,7 +659,7 @@ def load_and_merge(training_csv: str, labels_csv: str) -> pd.DataFrame:
 
     # One target row per (base Name, Warhead) that matches the label's warhead set
     target_rows: list[dict] = []
-    unmatched_labels = 0
+    unmatched_warhead_labels: list[dict] = []
 
     for _, lrow in label_df.iterrows():
         base_name = lrow["_base_name"]
@@ -551,7 +672,14 @@ def load_and_merge(training_csv: str, labels_csv: str) -> pd.DataFrame:
             base_name, frank_wh, warheads_by_name
         )
         if not matched_whs:
-            unmatched_labels += 1
+            unmatched_warhead_labels.append(
+                unmatched_warhead_label_record(
+                    lrow,
+                    base_name,
+                    frank_wh,
+                    warheads_by_name.get(base_name, []),
+                )
+            )
             continue
 
         for wh_lower in matched_whs:
@@ -617,11 +745,19 @@ def load_and_merge(training_csv: str, labels_csv: str) -> pd.DataFrame:
     print(f"  Matched rows:       {len(merged)}")
     print(f"  Ligand base names:  {merged['_base_name'].nunique()}")
     print(f"  Valid query groups: {merged['query_group'].nunique()}")
-    print(f"  Unmatched labels:   {unmatched_labels}")
+    print(f"  Unmatched labels:   {len(unmatched_warhead_labels)}")
+    if unmatched_warhead_labels:
+        preview = ", ".join(
+            str(rec.get("Name") or rec.get("base_name") or "?")
+            for rec in unmatched_warhead_labels[:5]
+        )
+        suffix = "..." if len(unmatched_warhead_labels) > 5 else ""
+        print(f"    e.g. {preview}{suffix}")
     print(f"  Target residue distribution:")
     print(merged[merged["relevance"] == 1]["target_residue_type"]
           .value_counts().to_string(header=False))
 
+    merged.attrs["unmatched_warhead_labels"] = unmatched_warhead_labels
     return merged
 
 

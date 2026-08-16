@@ -4,6 +4,10 @@
 Panel A — CovSite vs fpocket top-1 / top-3 / all: hit rate vs median search
 space reduction (from test_fpocket_summary.csv).
 
+With optional --covsite-top1-hit-rate / --covsite-top3-hit-rate, Panel A also
+plots those CovSite points (SSR from summary / label-results). Omitted flags
+are simply left out of the plot.
+
 Panel B — All fpocket top-1 pockets (hit or miss) vs the actual target-containing
 pocket whenever fpocket finds it (top-1 if that pocket has the site, else
 fpocket_best_*).
@@ -23,6 +27,12 @@ Usage (from scoring-analysis/ or helper/):
     python helper/figure_f_pocket.py \
         --summary fpocket_analysis/test_fpocket_summary.csv \
         --detail fpocket_analysis/test_fpocket_detail.csv \
+        --output fpocket_analysis/fpocket_figure.png
+    python helper/figure_f_pocket.py \
+        --summary fpocket_analysis/test_fpocket_summary.csv \
+        --detail fpocket_analysis/test_fpocket_detail.csv \
+        --covsite-top1-hit-rate 0.85 \
+        --covsite-top3-hit-rate 0.92 \
         --output fpocket_analysis/fpocket_figure.png
 """
 
@@ -130,12 +140,37 @@ def parse_args() -> argparse.Namespace:
         help="Optional CovSite label-results CSV for Panel A SSR fallback",
     )
     p.add_argument(
+        "--covsite-top1-hit-rate",
+        type=float,
+        default=None,
+        help=(
+            "Optional CovSite top-1%% hit rate for Panel A. "
+            "Omit to exclude the CovSite top 1%% point."
+        ),
+    )
+    p.add_argument(
+        "--covsite-top3-hit-rate",
+        type=float,
+        default=None,
+        help=(
+            "Optional CovSite top-3%% hit rate for Panel A. "
+            "Omit to exclude the CovSite top 3%% point."
+        ),
+    )
+    p.add_argument(
         "--output",
         type=Path,
         default=DEFAULT_ANALYSIS / "fpocket_figure.png",
     )
     p.add_argument("--dpi", type=int, default=300)
-    return p.parse_args()
+    args = p.parse_args()
+    for name, val in (
+        ("--covsite-top1-hit-rate", args.covsite_top1_hit_rate),
+        ("--covsite-top3-hit-rate", args.covsite_top3_hit_rate),
+    ):
+        if val is not None and not (0.0 <= val <= 1.0):
+            p.error(f"{name} must be in [0, 1], got {val}")
+    return args
 
 
 def _panel_letter(ax: plt.Axes, letter: str) -> None:
@@ -242,53 +277,74 @@ def _covsite_search_space_reduction(
 def load_panel_a_points(
     summary: pd.DataFrame,
     label_results: Path | None = None,
+    covsite_top1_hit_rate: float | None = None,
+    covsite_top3_hit_rate: float | None = None,
 ) -> pd.DataFrame:
-    """Hit rate vs median search-space reduction for CovSite and fpocket scopes."""
+    """Hit rate vs median search-space reduction for CovSite and fpocket scopes.
+
+    Each optional CovSite hit-rate flag adds its own point; omitted flags are
+    excluded. Without either flag, Panel A is fpocket-only.
+    """
     hit = summary[
         (summary["section"] == "hit_rate")
         & (summary["metric"] == "fpocket_target_hit_rate")
     ].iloc[0]
-    cov = summary[
-        (summary["section"] == "hit_rate")
-        & (summary["metric"] == "covsite_hit_at_top_pct_rate")
-    ].iloc[0]
     ss = _median_fraction_row(summary, "when_hit")
-    cov_reduction = _covsite_search_space_reduction(summary, label_results)
 
-    rows = [
-        {
-            "method": "CovSite",
-            "hit_rate": float(cov["overall"]),
-            "search_space_reduction": float(cov_reduction),
-            "color": COVSITE_COLOR,
-            "marker": "D",
-            "size": 90,
-        },
-        {
-            "method": "fpocket top-1",
-            "hit_rate": float(hit["top1"]),
-            "search_space_reduction": _fpocket_reduction_from_remaining(ss["top1"]),
-            "color": FPOCKET_COLORS["fpocket top-1"],
-            "marker": "o",
-            "size": 90,
-        },
-        {
-            "method": "fpocket top-3",
-            "hit_rate": float(hit["top3"]),
-            "search_space_reduction": _fpocket_reduction_from_remaining(ss["top3"]),
-            "color": FPOCKET_COLORS["fpocket top-3"],
-            "marker": "s",
-            "size": 90,
-        },
-        {
-            "method": "fpocket all",
-            "hit_rate": float(hit["overall"]),
-            "search_space_reduction": _fpocket_reduction_from_remaining(ss["overall"]),
-            "color": FPOCKET_COLORS["fpocket all"],
-            "marker": "^",
-            "size": 100,
-        },
-    ]
+    rows: list[dict] = []
+    if covsite_top1_hit_rate is not None or covsite_top3_hit_rate is not None:
+        cov_reduction = _covsite_search_space_reduction(summary, label_results)
+        if covsite_top1_hit_rate is not None:
+            rows.append(
+                {
+                    "method": "CovSite top 1%",
+                    "hit_rate": float(covsite_top1_hit_rate),
+                    "search_space_reduction": float(cov_reduction),
+                    "color": COVSITE_COLOR,
+                    "marker": "D",
+                    "size": 90,
+                }
+            )
+        if covsite_top3_hit_rate is not None:
+            rows.append(
+                {
+                    "method": "CovSite top 3%",
+                    "hit_rate": float(covsite_top3_hit_rate),
+                    "search_space_reduction": float(cov_reduction),
+                    "color": COVSITE_COLOR,
+                    "marker": "P",
+                    "size": 100,
+                }
+            )
+
+    rows.extend(
+        [
+            {
+                "method": "fpocket top-1",
+                "hit_rate": float(hit["top1"]),
+                "search_space_reduction": _fpocket_reduction_from_remaining(ss["top1"]),
+                "color": FPOCKET_COLORS["fpocket top-1"],
+                "marker": "o",
+                "size": 90,
+            },
+            {
+                "method": "fpocket top-3",
+                "hit_rate": float(hit["top3"]),
+                "search_space_reduction": _fpocket_reduction_from_remaining(ss["top3"]),
+                "color": FPOCKET_COLORS["fpocket top-3"],
+                "marker": "s",
+                "size": 90,
+            },
+            {
+                "method": "fpocket all",
+                "hit_rate": float(hit["overall"]),
+                "search_space_reduction": _fpocket_reduction_from_remaining(ss["overall"]),
+                "color": FPOCKET_COLORS["fpocket all"],
+                "marker": "^",
+                "size": 100,
+            },
+        ]
+    )
     return pd.DataFrame(rows)
 
 
@@ -454,8 +510,14 @@ def export_figure_stats(
 
     panel_a = points[["method", "hit_rate", "search_space_reduction"]].copy()
     panel_a.insert(0, "panel", "A")
+    cov_from_flags = points["method"].isin(["CovSite top 1%", "CovSite top 3%"]).any()
     panel_a["note"] = (
-        "hit_rate from summary; search_space_reduction is median "
+        (
+            "CovSite hit_rate from --covsite-top1/top3-hit-rate flags; "
+            if cov_from_flags
+            else "hit_rate from summary; "
+        )
+        + "search_space_reduction is median "
         "(CovSite: reduction; fpocket: 1 - remaining nucleophilic fraction)"
     )
     path_a = out_dir / f"{stem}_panel_a_stats.csv"
@@ -504,10 +566,23 @@ def export_figure_stats(
 
 
 def plot_panel_a(ax: plt.Axes, points: pd.DataFrame) -> None:
+    # CovSite label offsets: single point above; if both share an x, put the
+    # higher-hit-rate label above and the lower below so offsets do not cross.
+    cov_pct = points[points["method"].isin(["CovSite top 1%", "CovSite top 3%"])]
+    cov_label_dy: dict[str, float] = {}
+    if len(cov_pct) == 1:
+        cov_label_dy[str(cov_pct.iloc[0]["method"])] = 3.0
+    elif len(cov_pct) == 2:
+        ordered = cov_pct.sort_values("hit_rate", ascending=False)
+        cov_label_dy[str(ordered.iloc[0]["method"])] = 4.0
+        cov_label_dy[str(ordered.iloc[1]["method"])] = -4.0
+
     for _, row in points.iterrows():
+        x = 100.0 * float(row["search_space_reduction"])
+        y = 100.0 * float(row["hit_rate"])
         ax.scatter(
-            row["search_space_reduction"],
-            row["hit_rate"],
+            x,
+            y,
             s=row["size"],
             c=row["color"],
             marker=row["marker"],
@@ -515,23 +590,21 @@ def plot_panel_a(ax: plt.Axes, points: pd.DataFrame) -> None:
             edgecolors="white",
             linewidths=0.8,
         )
-        dx, dy = 0.035, 0.0
+        dx, dy = 3.5, 0.0
         ha = "left"
-        if row["method"] == "CovSite":
-            dx, dy, ha = -0.03, 0.03, "right"
-        elif row["method"] == "fpocket all":
-            dx, dy, ha = 0.03, -0.04, "left"
-        elif row["method"] == "fpocket top-3":
-            dx, dy, ha = -0.03, 0.035, "right"
-        elif row["method"] == "fpocket top-1":
-            dx, dy, ha = -0.03, -0.04, "right"
+        method = str(row["method"])
+        if method in cov_label_dy:
+            dx, dy, ha = -3.0, cov_label_dy[method], "right"
+        elif method == "fpocket all":
+            dx, dy, ha = 3.0, -4.0, "left"
+        elif method == "fpocket top-3":
+            dx, dy, ha = -3.0, 3.5, "right"
+        elif method == "fpocket top-1":
+            dx, dy, ha = -3.0, -4.0, "right"
         ax.annotate(
-            row["method"],
-            (row["search_space_reduction"], row["hit_rate"]),
-            xytext=(
-                row["search_space_reduction"] + dx,
-                row["hit_rate"] + dy,
-            ),
+            method,
+            (x, y),
+            xytext=(x + dx, y + dy),
             textcoords="data",
             fontsize=8.5,
             color=row["color"],
@@ -540,12 +613,12 @@ def plot_panel_a(ax: plt.Axes, points: pd.DataFrame) -> None:
             fontweight="medium",
         )
 
-    ax.set_xlabel("Median search space reduction", fontsize=10)
-    ax.set_ylabel("Hit rate", fontsize=10)
-    ax.set_xlim(-0.05, 1.08)
-    ax.set_ylim(0.25, 1.05)
-    ax.set_xticks([0.0, 0.25, 0.5, 0.75, 1.0])
-    ax.set_yticks([0.3, 0.5, 0.7, 0.9, 1.0])
+    ax.set_xlabel("Median search space reduction (%)", fontsize=10)
+    ax.set_ylabel("Hit rate (%)", fontsize=10)
+    ax.set_xlim(-5, 108)
+    ax.set_ylim(25, 105)
+    ax.set_xticks([0, 25, 50, 75, 100])
+    ax.set_yticks([30, 40, 50, 60, 70, 80, 90, 100])
     ax.axvline(0.0, color="#dddddd", lw=0.8, zorder=0)
     ax.grid(True, linestyle=":", linewidth=0.6, alpha=0.7)
     ax.spines["top"].set_visible(False)
@@ -678,7 +751,22 @@ def main() -> None:
     summary = pd.read_csv(args.summary)
     detail = pd.read_csv(args.detail, low_memory=False)
 
-    points = load_panel_a_points(summary, args.label_results)
+    points = load_panel_a_points(
+        summary,
+        args.label_results,
+        covsite_top1_hit_rate=args.covsite_top1_hit_rate,
+        covsite_top3_hit_rate=args.covsite_top3_hit_rate,
+    )
+    if (
+        args.covsite_top1_hit_rate is not None
+        or args.covsite_top3_hit_rate is not None
+    ):
+        parts = []
+        if args.covsite_top1_hit_rate is not None:
+            parts.append(f"top 1%={args.covsite_top1_hit_rate:.6f}")
+        if args.covsite_top3_hit_rate is not None:
+            parts.append(f"top 3%={args.covsite_top3_hit_rate:.6f}")
+        print(f"[INFO] Panel A CovSite hit rates from flags: {', '.join(parts)}")
     effects_b, stats_b, ns_b = build_effect_table(detail, "target_pocket")
     effects_c, stats_c, ns_c = build_effect_table(detail, "recovered_best")
 

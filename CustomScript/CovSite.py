@@ -48,6 +48,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib.util
+import json
 import os
 import re
 import subprocess
@@ -412,14 +413,17 @@ def filter_sites_to_target(
     resnum: str,
     chain: str,
 ) -> pd.DataFrame:
-    """Keep only the requested Residue/ResNum/Chain site."""
+    """Keep only the requested Residue/ResNum/Chain site.
+
+    Chain IDs are case-sensitive (B != b), matching PDB/mmCIF conventions.
+    """
     residue = clean_text(residue).upper()
     resnum = normalized_resnum(resnum)
-    chain = clean_text(chain).upper()
+    chain = clean_text(chain)
     mask = (
         (sites["Residue"].astype(str).str.upper() == residue)
         & (sites["ResNum"].map(normalized_resnum) == resnum)
-        & (sites["Chain"].astype(str).str.strip().str.upper() == chain)
+        & (sites["Chain"].astype(str).str.strip() == chain)
     )
     return sites.loc[mask].copy()
 
@@ -436,7 +440,7 @@ def predict_deprotonation(
     probabilities: list[float] = []
     for _, row in sites.iterrows():
         residue = str(row["Residue"]).upper()
-        chain = str(row["Chain"]).strip().upper()
+        chain = str(row["Chain"]).strip()
         resnum = int(normalized_resnum(row["ResNum"]))
         cache_key = deprot_module.make_prediction_cache_key(
             str(pdb_path), chain, residue, resnum, str(model_path),
@@ -527,6 +531,51 @@ def write_skipped_inputs_csv(
     return path
 
 
+def append_unmatched_warheads_to_skipped(
+    skipped_rows: list[dict[str, Any]],
+    output_dir: Path,
+) -> int:
+    """
+    After Cov_Screen labeled eval, fold unmatched Frankenstein warheads into
+    covsite_skipped_inputs.csv (excluded from hit/miss, not model misses).
+    """
+    summary_path = output_dir / "covsite_evaluation_summary.json"
+    if not summary_path.is_file():
+        return 0
+    try:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"[CovSite] WARNING: could not read {summary_path.name}: {exc}")
+        return 0
+
+    unmatched = summary.get("unmatched_warhead_labels") or []
+    if not isinstance(unmatched, list) or not unmatched:
+        return 0
+
+    added = 0
+    for rec in unmatched:
+        if not isinstance(rec, dict):
+            continue
+        skipped_rows.append(
+            {
+                "Source_Row": rec.get("Source_Row", ""),
+                "PDB_ID": clean_text(rec.get("PDB_ID", "")),
+                "Name": clean_text(rec.get("Name", "") or rec.get("base_name", "")),
+                "LigID": clean_text(rec.get("LigID", "")),
+                "electrophile_smiles": clean_text(
+                    rec.get("electrophile_smiles", "")
+                ),
+                "Reason": clean_text(
+                    rec.get("Reason", "unmatched_frankenstein_warhead")
+                )
+                or "unmatched_frankenstein_warhead",
+                "Detail": clean_text(rec.get("Detail", "")),
+            }
+        )
+        added += 1
+    return added
+
+
 def deprotonated_descriptors(
     smiles: str,
     warhead: dict[str, Any],
@@ -586,7 +635,7 @@ def add_descriptor_columns(
 
 def site_name_tag(row: pd.Series) -> str:
     """Stable short tag for a labeled target site (used to disambiguate Names)."""
-    chain = sanitize_name_part(clean_text(row["_target_chain"]).upper() or "X", 8)
+    chain = sanitize_name_part(clean_text(row["_target_chain"]) or "X", 8)
     residue = sanitize_name_part(
         clean_text(row["_target_residue"]).upper() or "UNK", 8
     )
@@ -654,7 +703,7 @@ def disambiguate_name_warhead_site_conflicts(
             + ":"
             + out_labels["ResNum"].map(normalized_resnum)
             + ":"
-            + out_labels["Chain"].astype(str).str.strip().str.upper()
+            + out_labels["Chain"].astype(str).str.strip()
         ),
     )
     conflicts = normalized.groupby(["_name", "_warhead"])["_site"].nunique()
@@ -693,7 +742,7 @@ def disambiguate_name_warhead_site_conflicts(
         site = (
             f"{str(row['Residue']).strip().upper()}:"
             f"{normalized_resnum(row['ResNum'])}:"
-            f"{str(row['Chain']).strip().upper()}"
+            f"{str(row['Chain']).strip()}"
         )
         key = (str(row["Name"]), str(row["Frankenstein_Warhead"]), site)
         new_label_names.append(rename_map.get(key, str(row["Name"])))
@@ -868,7 +917,17 @@ def cov_screen_common_args(args: argparse.Namespace) -> list[str]:
 
 def run_cov_screen(command: list[str], description: str) -> None:
     print(f"\n[CovSite] Running Cov_Screen {description}...")
-    subprocess.run(command, check=True)
+    result = subprocess.run(command)
+    if result.returncode != 0:
+        cmd = " ".join(str(part) for part in command)
+        raise SystemExit(
+            f"[ERROR] Cov_Screen {description} failed with exit code "
+            f"{result.returncode}.\n"
+            f"  Command: {cmd}\n"
+            f"  Scroll up for the Cov_Screen ERROR/traceback "
+            f"(common causes: no warhead matches, missing model "
+            f"feature columns, or no evaluable query groups)."
+        )
 
 
 def launch_cov_screen(
@@ -967,6 +1026,16 @@ def run_screen_only(args: argparse.Namespace) -> None:
         labels_path,
         output_dir,
     )
+
+    skipped_rows: list[dict[str, Any]] = []
+    n_unmatched = append_unmatched_warheads_to_skipped(skipped_rows, output_dir)
+    if n_unmatched:
+        skipped_path = write_skipped_inputs_csv(output_dir, skipped_rows)
+        if skipped_path is not None:
+            print(
+                f"[CovSite] Appended {n_unmatched} unmatched warhead label(s) "
+                f"to {skipped_path.name}"
+            )
 
     print("\n[CovSite] Complete (screen-only)")
     print(f"  Candidates:    {candidates_path}")
@@ -1089,7 +1158,7 @@ def main() -> None:
     )
     work["_target_resnum"] = work[resnum_col] if resnum_col else ""
     work["_target_chain"] = (
-        work[chain_col].map(clean_text).str.upper() if chain_col else ""
+        work[chain_col].map(clean_text) if chain_col else ""
     )
     work["_requested_warheads"] = (
         work[requested_warhead_col].map(clean_text)
@@ -1201,7 +1270,7 @@ def main() -> None:
         site = (
             f"{clean_text(row['_target_residue']).upper()}:"
             f"{normalized_resnum(row['_target_resnum'])}:"
-            f"{clean_text(row['_target_chain']).upper()}"
+            f"{clean_text(row['_target_chain'])}"
         )
         supplied_name_sites[supplied.casefold()].add(site)
     multi_target_supplied_names = {
@@ -1276,7 +1345,7 @@ def main() -> None:
             pdb_path, sasa_sites = pdb_sasa_cache[pdb_id]
             target_residue = clean_text(input_row["_target_residue"]).upper()
             target_resnum = normalized_resnum(input_row["_target_resnum"])
-            target_chain = clean_text(input_row["_target_chain"]).upper()
+            target_chain = clean_text(input_row["_target_chain"])
             sites = filter_sites_to_target(
                 sasa_sites, target_residue, target_resnum, target_chain
             )
@@ -1348,14 +1417,11 @@ def main() -> None:
             if target_is_complete(input_row):
                 target_residue = clean_text(input_row["_target_residue"]).upper()
                 target_resnum = normalized_resnum(input_row["_target_resnum"])
-                target_chain = clean_text(input_row["_target_chain"]).upper()
+                target_chain = clean_text(input_row["_target_chain"])
                 target_exists = (
                     (sites["Residue"].astype(str).str.upper() == target_residue)
                     & (sites["ResNum"].map(normalized_resnum) == target_resnum)
-                    & (
-                        sites["Chain"].astype(str).str.strip().str.upper()
-                        == target_chain
-                    )
+                    & (sites["Chain"].astype(str).str.strip() == target_chain)
                 ).any()
                 if target_exists:
                     row_has_valid_target = True
@@ -1460,9 +1526,7 @@ def main() -> None:
                     target_resnum = normalized_resnum(
                         input_row["_target_resnum"]
                     )
-                    target_chain = clean_text(
-                        input_row["_target_chain"]
-                    ).upper()
+                    target_chain = clean_text(input_row["_target_chain"])
                     filtered = filter_sites_to_target(
                         frame,
                         target_residue,
@@ -1637,6 +1701,13 @@ def main() -> None:
         print(f"  Labels:             {labels_path} ({len(labels)} labeled site(s))")
         print(f"  Latest aliases:     {output_dir / 'covsite_candidates.csv'}")
         print(f"  Score ranking:      {output_dir / 'covsite_scores.csv'}")
+
+    n_unmatched = append_unmatched_warheads_to_skipped(skipped_rows, output_dir)
+    if n_unmatched:
+        print(
+            f"[CovSite] Added {n_unmatched} unmatched Frankenstein warhead "
+            "label(s) to skipped inputs"
+        )
 
     skipped_path = write_skipped_inputs_csv(output_dir, skipped_rows)
     if skipped_path is not None:
