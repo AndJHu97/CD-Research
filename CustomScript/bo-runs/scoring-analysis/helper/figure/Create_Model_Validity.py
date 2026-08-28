@@ -2,10 +2,11 @@
 """Create a four-panel model-validity figure (Panels A–D).
 
 Panel A: Feature-ablation dumbbell chart — hit rate @ top X% (test) with 95% Wilson CI.
-Panel B: Feature-ablation dumbbell chart — NDCG@K (test) with 95% bootstrap CI
+Panel B: Feature-ablation dumbbell chart — NDCG (test) with 95% bootstrap CI
          (query-group rows when available, else CV fold SEM).
-         Optional --ndcg-k recomputes NDCG@K from target_rank in test_results /
-         test_query_groups CSVs (useful when summaries were run with k=1).
+         Optional --ndcg-k recomputes NDCG@K from target_rank, or
+         --ndcg-top-pct recomputes NDCG@top-X% with a per-query cutoff
+         from n_residues (same window as hit_at_top_pct).
 Panel C: SHAP beeswarm for physicochemical descriptors (residue one-hots omitted).
 Panel D: CV fold distribution vs held-out test hit rate @ top X%
          (both use hit_at_top_pct; X from summary top_pct_threshold).
@@ -22,7 +23,7 @@ Usage:
   --ablation "Without QM reactivity and deprotonation=reactivity_deprot_ablation_summary.json" \
   --ablation "Warhead only=warhead_ablation_summary.json" \
   --ablation "Non-covalent only=noncovalent_only_ablation_summary.json" \
-  --ndcg-k 15 \
+  --ndcg-top-pct 1 \
   --test-results test_results.csv \
   --output model_validity.png
 """
@@ -169,12 +170,48 @@ def hit_rate_axis_label(top_pct: float) -> str:
     return f"Hit rate @ top {top_pct:g}%"
 
 
+def ndcg_axis_label(*, k: int | None = None, top_pct: float | None = None) -> str:
+    """Panel B x-axis label for fixed-K or top-X% NDCG."""
+    if top_pct is not None:
+        if float(top_pct).is_integer():
+            return f"NDCG@top {int(top_pct)}% (test)"
+        return f"NDCG@top {top_pct:g}% (test)"
+    if k is None:
+        return "NDCG (test)"
+    return f"NDCG@{int(k)} (test)"
+
+
+def ndcg_metric_tag(*, k: int | None = None, top_pct: float | None = None) -> str:
+    """Short tag for logs, e.g. NDCG@15 or NDCG@top 1%."""
+    if top_pct is not None:
+        if float(top_pct).is_integer():
+            return f"NDCG@top {int(top_pct)}%"
+        return f"NDCG@top {top_pct:g}%"
+    if k is None:
+        return "NDCG"
+    return f"NDCG@{int(k)}"
+
+
 def load_hit_at_top_pct(summary_path: Path) -> float:
     return load_test_metric(summary_path, "hit_at_top_pct")
 
 
 def load_ndcg(summary_path: Path) -> float:
     return load_test_metric(summary_path, "ndcg")
+
+
+def top_pct_cutoff_rank(n_residues: float, top_pct: float) -> float:
+    """
+    Max qualifying rank for Hit/NDCG@top-X%, matching Training_Cov_Screen
+    hit_at_top_pct: rank_frac = (rank-1)/(n-1) <= top_pct/100.
+    """
+    n = float(n_residues)
+    p_frac = float(top_pct) / 100.0
+    if n <= 1:
+        return 1.0
+    if p_frac <= 0:
+        return 0.0
+    return float(np.floor(p_frac * (n - 1.0) + 1.0))
 
 
 def ndcg_at_k_from_ranks(ranks: np.ndarray, k: int) -> np.ndarray:
@@ -192,17 +229,54 @@ def ndcg_at_k_from_ranks(ranks: np.ndarray, k: int) -> np.ndarray:
     return out
 
 
-def load_target_ranks(csv_path: Path) -> np.ndarray:
+def ndcg_at_top_pct_from_ranks(
+    ranks: np.ndarray,
+    n_residues: np.ndarray,
+    top_pct: float,
+) -> np.ndarray:
+    """
+    Per-query-group NDCG@top-X% (binary, one true target).
+
+    Uses the same top-X% window as hit_at_top_pct: credit only when
+    (rank-1)/(n-1) <= top_pct/100, with DCG = 1/log2(rank+1).
+    """
+    if top_pct <= 0:
+        raise ValueError(f"ndcg top_pct must be positive, got {top_pct}")
+    ranks = np.asarray(ranks, dtype=float)
+    n_residues = np.asarray(n_residues, dtype=float)
+    if ranks.shape != n_residues.shape:
+        raise ValueError(
+            f"ranks and n_residues length mismatch: {ranks.shape} vs {n_residues.shape}"
+        )
+    cutoffs = np.array(
+        [top_pct_cutoff_rank(n, top_pct) for n in n_residues],
+        dtype=float,
+    )
+    out = np.zeros(ranks.shape, dtype=float)
+    in_window = np.isfinite(ranks) & (ranks >= 1) & (ranks <= cutoffs)
+    out[in_window] = 1.0 / np.log2(ranks[in_window] + 1.0)
+    return out
+
+
+def load_rank_table(csv_path: Path) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
     if "target_rank" not in df.columns:
         raise ValueError(
             f"{csv_path}: missing target_rank column "
             "(expected test_results / test_query_groups export)."
         )
-    ranks = pd.to_numeric(df["target_rank"], errors="coerce").to_numpy(dtype=float)
-    if ranks.size == 0 or not np.isfinite(ranks).any():
+    ranks = pd.to_numeric(df["target_rank"], errors="coerce")
+    if ranks.size == 0 or not np.isfinite(ranks.to_numpy(dtype=float)).any():
         raise ValueError(f"{csv_path}: no valid target_rank values")
-    return ranks
+    out = df.copy()
+    out["target_rank"] = ranks
+    if "n_residues" in out.columns:
+        out["n_residues"] = pd.to_numeric(out["n_residues"], errors="coerce")
+    return out
+
+
+def load_target_ranks(csv_path: Path) -> np.ndarray:
+    return load_rank_table(csv_path)["target_rank"].to_numpy(dtype=float)
 
 
 def resolve_test_query_groups(
@@ -241,21 +315,58 @@ def parse_ablation_test_results_arg(spec: str) -> tuple[str, Path]:
     return label, Path(path_str.strip())
 
 
-def load_ndcg_from_ranks(csv_path: Path, k: int) -> float:
-    ranks = load_target_ranks(csv_path)
-    return float(ndcg_at_k_from_ranks(ranks, k).mean())
+def load_ndcg_from_ranks(
+    csv_path: Path,
+    *,
+    k: int | None = None,
+    top_pct: float | None = None,
+) -> float:
+    if (k is None) == (top_pct is None):
+        raise ValueError("Provide exactly one of k or top_pct for NDCG recompute.")
+    if k is not None:
+        return float(ndcg_at_k_from_ranks(load_target_ranks(csv_path), k).mean())
+    df = load_rank_table(csv_path)
+    if "n_residues" not in df.columns:
+        raise ValueError(
+            f"{csv_path}: missing n_residues column (required for NDCG@top-X%)."
+        )
+    values = ndcg_at_top_pct_from_ranks(
+        df["target_rank"].to_numpy(dtype=float),
+        df["n_residues"].to_numpy(dtype=float),
+        float(top_pct),
+    )
+    return float(np.nanmean(values))
 
 
 def load_ndcg_ci_from_ranks(
     csv_path: Path,
-    k: int,
     *,
+    k: int | None = None,
+    top_pct: float | None = None,
     alpha: float = DEFAULT_CI_LEVEL,
     seed: int = 42,
 ) -> tuple[float, float, str]:
-    values = ndcg_at_k_from_ranks(load_target_ranks(csv_path), k)
+    if (k is None) == (top_pct is None):
+        raise ValueError("Provide exactly one of k or top_pct for NDCG CI.")
+    if k is not None:
+        values = ndcg_at_k_from_ranks(load_target_ranks(csv_path), k)
+        tag = f"bootstrap (NDCG@{k} from target_rank)"
+    else:
+        df = load_rank_table(csv_path)
+        if "n_residues" not in df.columns:
+            raise ValueError(
+                f"{csv_path}: missing n_residues column (required for NDCG@top-X%)."
+            )
+        values = ndcg_at_top_pct_from_ranks(
+            df["target_rank"].to_numpy(dtype=float),
+            df["n_residues"].to_numpy(dtype=float),
+            float(top_pct),
+        )
+        tag = (
+            f"bootstrap ({ndcg_metric_tag(top_pct=float(top_pct))} from target_rank)"
+        )
     lo, hi = _bootstrap_mean_ci(values, alpha=alpha, seed=seed)
-    return (lo, hi, f"bootstrap (NDCG@{k} from target_rank)")
+    return (lo, hi, tag)
 
 
 def _t_critical(df: int, alpha: float) -> float:
@@ -826,6 +937,7 @@ def create_figure(
     seed: int,
     ci_level: float = DEFAULT_CI_LEVEL,
     ndcg_k_override: int | None = None,
+    ndcg_top_pct_override: float | None = None,
     test_results: Path | None = None,
     ablation_test_results: list[str] | None = None,
 ) -> None:
@@ -833,9 +945,26 @@ def create_figure(
     full_test = load_test_overall(full_summary)
     full_hit = float(full_test["hit_at_top_pct"])
     summary_ndcg_k = int(full_test.get("k", 15))
-    ndcg_k = int(ndcg_k_override) if ndcg_k_override is not None else summary_ndcg_k
     top_pct = load_top_pct_threshold(full_summary)
     hit_xlabel = hit_rate_axis_label(top_pct)
+
+    if ndcg_k_override is not None and ndcg_top_pct_override is not None:
+        raise ValueError("Pass only one of --ndcg-k or --ndcg-top-pct.")
+
+    recompute_ndcg = (
+        ndcg_k_override is not None or ndcg_top_pct_override is not None
+    )
+    ndcg_k: int | None = None
+    ndcg_top_pct: float | None = None
+    if ndcg_top_pct_override is not None:
+        ndcg_top_pct = float(ndcg_top_pct_override)
+    elif ndcg_k_override is not None:
+        ndcg_k = int(ndcg_k_override)
+    else:
+        ndcg_k = summary_ndcg_k
+
+    ndcg_xlabel = ndcg_axis_label(k=ndcg_k, top_pct=ndcg_top_pct)
+    ndcg_tag = ndcg_metric_tag(k=ndcg_k, top_pct=ndcg_top_pct)
 
     ablation_rank_map = {
         label: path
@@ -845,18 +974,20 @@ def create_figure(
         )
     }
 
-    recompute_ndcg = ndcg_k_override is not None
     full_rank_csv: Path | None = None
     if recompute_ndcg:
         full_rank_csv = resolve_test_query_groups(full_summary, explicit=test_results)
         if full_rank_csv is None:
             raise FileNotFoundError(
-                "--ndcg-k requires a rank CSV for the full model. Pass --test-results "
-                "or place test_results.csv / test_query_groups.csv next to --full-summary."
+                f"{ndcg_tag} recompute requires a rank CSV for the full model. "
+                "Pass --test-results or place test_results.csv / "
+                "test_query_groups.csv next to --full-summary."
             )
-        full_ndcg = load_ndcg_from_ranks(full_rank_csv, ndcg_k)
+        full_ndcg = load_ndcg_from_ranks(
+            full_rank_csv, k=ndcg_k, top_pct=ndcg_top_pct,
+        )
         print(
-            f"  Recomputing NDCG@{ndcg_k} from ranks "
+            f"  Recomputing {ndcg_tag} from ranks "
             f"(summary had NDCG@{summary_ndcg_k}={float(full_test['ndcg']):.3f})"
         )
         print(f"  Full-model ranks: {full_rank_csv}")
@@ -864,8 +995,8 @@ def create_figure(
         full_ndcg = float(full_test["ndcg"])
         if test_results is not None:
             print(
-                "[WARN] --test-results is ignored unless --ndcg-k is set; "
-                "using summary NDCG."
+                "[WARN] --test-results is ignored unless --ndcg-k or "
+                "--ndcg-top-pct is set; using summary NDCG."
             )
 
     ablation_paths = resolve_ablations(full_summary, ablation_specs)
@@ -887,12 +1018,18 @@ def create_figure(
             if rank_csv is None:
                 print(
                     f"[WARN] Ablation '{label}': no test_results/query_groups CSV; "
-                    f"skipping (needed for NDCG@{ndcg_k})."
+                    f"skipping (needed for {ndcg_tag})."
                 )
                 continue
-            ndcg = load_ndcg_from_ranks(rank_csv, ndcg_k)
+            ndcg = load_ndcg_from_ranks(
+                rank_csv, k=ndcg_k, top_pct=ndcg_top_pct,
+            )
             ndcg_lo, ndcg_hi, method = load_ndcg_ci_from_ranks(
-                rank_csv, ndcg_k, alpha=ci_level, seed=seed,
+                rank_csv,
+                k=ndcg_k,
+                top_pct=ndcg_top_pct,
+                alpha=ci_level,
+                seed=seed,
             )
         else:
             ndcg = load_ndcg(path)
@@ -909,14 +1046,18 @@ def create_figure(
         print(
             f"  Ablation '{label}': {hit_xlabel} = {hit * 100:.1f}% "
             f"[{hit_ci[0] * 100:.1f}, {hit_ci[1] * 100:.1f}], "
-            f"NDCG@{ndcg_k} = {ndcg:.3f} [{ndcg_lo:.3f}, {ndcg_hi:.3f}]"
+            f"{ndcg_tag} = {ndcg:.3f} [{ndcg_lo:.3f}, {ndcg_hi:.3f}]"
         )
 
     full_hit_ci = load_hit_rate_ci(full_summary, alpha=ci_level)
     if recompute_ndcg:
         assert full_rank_csv is not None
         full_ndcg_lo, full_ndcg_hi, full_ndcg_method = load_ndcg_ci_from_ranks(
-            full_rank_csv, ndcg_k, alpha=ci_level, seed=seed,
+            full_rank_csv,
+            k=ndcg_k,
+            top_pct=ndcg_top_pct,
+            alpha=ci_level,
+            seed=seed,
         )
     else:
         full_ndcg_lo, full_ndcg_hi, full_ndcg_method = load_ndcg_ci(
@@ -929,7 +1070,7 @@ def create_figure(
         f"[{full_hit_ci[0] * 100:.1f}, {full_hit_ci[1] * 100:.1f}]"
     )
     print(
-        f"  Full model test NDCG@{ndcg_k} = {full_ndcg:.3f} "
+        f"  Full model test {ndcg_tag} = {full_ndcg:.3f} "
         f"[{full_ndcg_lo:.3f}, {full_ndcg_hi:.3f}] ({ndcg_ci_method})"
     )
 
@@ -980,7 +1121,7 @@ def create_figure(
         ablation_ndcgs,
         panel_label="B",
         title="Feature ablation (NDCG)",
-        xlabel=f"NDCG@{ndcg_k} (test)",
+        xlabel=ndcg_xlabel,
         as_percent=False,
         full_ci=(full_ndcg_lo, full_ndcg_hi),
         ablation_cis=ordered_ndcg_cis,
@@ -1040,9 +1181,24 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Recompute Panel B NDCG@K from target_rank in test_results / "
-            "test_query_groups CSVs (e.g. 15). Requires --test-results for the "
-            "full model (or a sibling CSV next to --full-summary), and a rank CSV "
+            "test_query_groups CSVs (e.g. 15). Mutually exclusive with "
+            "--ndcg-top-pct. Requires --test-results for the full model "
+            "(or a sibling CSV next to --full-summary), and a rank CSV "
             "for each ablation (auto-discovered or via --ablation-test-results)."
+        ),
+    )
+    p.add_argument(
+        "--ndcg-top-pct",
+        type=float,
+        default=None,
+        nargs="?",
+        const=-1.0,
+        metavar="X",
+        help=(
+            "Recompute Panel B as NDCG@top-X%% from target_rank and n_residues "
+            "(same top-X%% window as hit_at_top_pct). Pass a value (e.g. 1) or "
+            "omit the value to use top_pct_threshold from --full-summary. "
+            "Mutually exclusive with --ndcg-k."
         ),
     )
     p.add_argument(
@@ -1051,7 +1207,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Full-model test_results.csv or test_query_groups.csv with target_rank. "
-            "Used with --ndcg-k to recompute NDCG."
+            "Used with --ndcg-k or --ndcg-top-pct to recompute NDCG."
         ),
     )
     p.add_argument(
@@ -1109,6 +1265,14 @@ def main() -> None:
         raise ValueError("--shap-alpha must be in (0, 1].")
     if args.ndcg_k is not None and args.ndcg_k <= 0:
         raise ValueError("--ndcg-k must be a positive integer.")
+    if args.ndcg_k is not None and args.ndcg_top_pct is not None:
+        raise ValueError("Pass only one of --ndcg-k or --ndcg-top-pct.")
+    ndcg_top_pct_override = args.ndcg_top_pct
+    if ndcg_top_pct_override is not None:
+        if abs(ndcg_top_pct_override + 1.0) < 1e-12:
+            ndcg_top_pct_override = load_top_pct_threshold(args.full_summary)
+        if ndcg_top_pct_override <= 0:
+            raise ValueError("--ndcg-top-pct must be positive.")
     if args.test_results is not None and not args.test_results.is_file():
         raise FileNotFoundError(f"--test-results not found: {args.test_results}")
 
@@ -1123,6 +1287,7 @@ def main() -> None:
         seed=args.seed,
         ci_level=args.ci_level,
         ndcg_k_override=args.ndcg_k,
+        ndcg_top_pct_override=ndcg_top_pct_override,
         test_results=args.test_results,
         ablation_test_results=args.ablation_test_results,
     )

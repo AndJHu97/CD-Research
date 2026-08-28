@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Create a C207 benchmark comparison figure (Panels A–B + companion table).
 
-Panel A: CovSite blind site recovery vs perfect-match random baseline (Hit @ top-X% and Hit @ K).
+Panel A: CovSite blind site recovery vs perfect-match random baseline (Hit top-X% and Hit top K).
 Panel B: Literature pose-prediction success rates for covalent docking tools.
 
-With --direct-comparison: single portrait panel comparing ranked detection, random baseline,
-and mean structural screening performance (methodology comparison).
+With --direct-comparison (3 rows):
+  A: CovSite top-X% / top K + structural docking tools
+  B: CovSite / non-covalent / random at top-X% and top K
+  C: companion summary table
 
 Usage:
     python Create_Benchmark_Figures.py \\
@@ -385,6 +387,7 @@ def _draw_group_bracket(
     *,
     color: str,
     tick: float = 2.5,
+    fontsize: float = 10,
 ) -> None:
     """Draw a flat bracket above a span of bars with a centered label."""
     ax.plot(
@@ -402,7 +405,7 @@ def _draw_group_bracket(
         label,
         ha="center",
         va="bottom",
-        fontsize=10,
+        fontsize=fontsize,
         fontweight="bold",
         color=color,
         zorder=6,
@@ -410,104 +413,11 @@ def _draw_group_bracket(
     )
 
 
-def plot_direct_comparison(
+def _annotate_direct_bar_values(
     ax: plt.Axes,
-    *,
-    covsite_top_pct: float,
-    random_top_pct: float,
-    covsite_top_k: float,
-    random_top_k: float,
-    docking_benchmarks: list[tuple[str, float, int]],
-    k: int,
-    top_pct_threshold: float,
-    noncovalent_top_pct: float | None = None,
-    noncovalent_top_k: float | None = None,
+    bars,
+    values: list[float],
 ) -> None:
-    """Panel A: ranked models + random, then each structural tool as its own bar.
-
-    Bar order when non-covalent metrics are provided:
-      full @ top% → non-covalent @ top% → random @ top% →
-      full @ top K → non-covalent @ top K → random @ top K →
-      each docking tool (all red)
-    """
-    tools_sorted = sorted(docking_benchmarks, key=lambda item: item[1], reverse=True)
-    tool_names = [name for name, _, _ in tools_sorted]
-    tool_values = [float(pct) for _, pct, _ in tools_sorted]
-    include_noncovalent = (
-        noncovalent_top_pct is not None and noncovalent_top_k is not None
-    )
-
-    ranking_values: list[float] = []
-    ranking_colors: list[str] = []
-    ranking_labels: list[str] = []
-    if include_noncovalent:
-        ranking_values = [
-            covsite_top_pct,
-            float(noncovalent_top_pct),
-            random_top_pct,
-            covsite_top_k,
-            float(noncovalent_top_k),
-            random_top_k,
-        ]
-        ranking_colors = [
-            DIRECT_COVSITE_COLOR,
-            DIRECT_NONCOVALENT_COLOR,
-            DIRECT_RANDOM_COLOR,
-            DIRECT_COVSITE_COLOR,
-            DIRECT_NONCOVALENT_COLOR,
-            DIRECT_RANDOM_COLOR,
-        ]
-        ranking_labels = [
-            f"CovSite\n@ top {top_pct_threshold:g}%",
-            f"Non-covalent model\n@ top {top_pct_threshold:g}%",
-            f"Random\n@ top {top_pct_threshold:g}%",
-            f"CovSite\n@ top {k}",
-            f"Non-covalent model\n@ top {k}",
-            f"Random\n@ top {k}",
-        ]
-        # Gaps between metric triplets; larger gap before structural tools.
-        ranking_x = np.array([0.0, 1.1, 2.2, 3.8, 4.9, 6.0])
-    else:
-        ranking_values = [
-            covsite_top_pct,
-            random_top_pct,
-            covsite_top_k,
-            random_top_k,
-        ]
-        ranking_colors = [
-            DIRECT_COVSITE_COLOR,
-            DIRECT_RANDOM_COLOR,
-            DIRECT_COVSITE_COLOR,
-            DIRECT_RANDOM_COLOR,
-        ]
-        ranking_labels = [
-            f"CovSite\n@ top {top_pct_threshold:g}%",
-            f"Random\n@ top {top_pct_threshold:g}%",
-            f"CovSite\n@ top {k}",
-            f"Random\n@ top {k}",
-        ]
-        ranking_x = np.array([0.0, 1.15, 2.6, 3.75])
-
-    n_rank = len(ranking_x)
-    n_tools = len(tool_values)
-    tool_start = float(ranking_x[-1] + 1.7)
-    tool_x = tool_start + np.arange(n_tools, dtype=float) * 1.05
-    x = np.concatenate([ranking_x, tool_x])
-    values = ranking_values + tool_values
-    colors = ranking_colors + [DIRECT_DOCKING_COLOR] * n_tools
-    tick_labels = ranking_labels + [name.replace("-", "-\n") if len(name) > 8 else name for name in tool_names]
-    bar_width = 0.78
-
-    bars = ax.bar(
-        x,
-        values,
-        color=colors,
-        edgecolor="white",
-        linewidth=1.0,
-        width=bar_width,
-        zorder=2,
-    )
-
     for bar, val in zip(bars, values):
         cx = bar.get_x() + bar.get_width() / 2
         if val >= 85.0:
@@ -517,7 +427,7 @@ def plot_direct_comparison(
                 f"{val:.1f}%",
                 ha="center",
                 va="top",
-                fontsize=9.0,
+                fontsize=8.0,
                 fontweight="bold",
                 color="white",
                 zorder=5,
@@ -529,12 +439,71 @@ def plot_direct_comparison(
                 f"{val:.1f}%",
                 ha="center",
                 va="bottom",
-                fontsize=9.0,
+                fontsize=8.0,
                 fontweight="bold",
                 zorder=5,
             )
 
-    # Bracket spanning all structural-tool bars.
+
+def _style_direct_axes(ax: plt.Axes, *, y_top: float) -> None:
+    ax.set_ylabel("Performance (%)", fontsize=10, fontweight="bold")
+    for label in ax.get_yticklabels():
+        label.set_fontsize(9.0)
+        label.set_fontweight("bold")
+    ax.set_ylim(0, y_top)
+    ax.yaxis.grid(False)
+    ax.xaxis.grid(False)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    for side in ("left", "bottom"):
+        ax.spines[side].set_linewidth(1.4)
+    ax.tick_params(width=1.2)
+
+
+def plot_direct_panel_a(
+    ax: plt.Axes,
+    *,
+    covsite_top_pct: float,
+    covsite_top_k: float,
+    docking_benchmarks: list[tuple[str, float, int]],
+    k: int,
+    top_pct_threshold: float,
+) -> None:
+    """Panel A: CovSite top-X% / top K, then each structural tool."""
+    tools_sorted = sorted(docking_benchmarks, key=lambda item: item[1], reverse=True)
+    tool_names = [name for name, _, _ in tools_sorted]
+    tool_values = [float(pct) for _, pct, _ in tools_sorted]
+
+    ranking_x = np.array([0.0, 0.72])
+    ranking_values = [covsite_top_pct, covsite_top_k]
+    ranking_colors = [DIRECT_COVSITE_COLOR, DIRECT_COVSITE_COLOR]
+    ranking_labels = [
+        f"CovSite\ntop {top_pct_threshold:g}%",
+        f"CovSite\ntop {k}",
+    ]
+
+    n_tools = len(tool_values)
+    tool_start = float(ranking_x[-1] + 1.05)
+    tool_x = tool_start + np.arange(n_tools, dtype=float) * 0.70
+    x = np.concatenate([ranking_x, tool_x]) if n_tools else ranking_x
+    values = ranking_values + tool_values
+    colors = ranking_colors + [DIRECT_DOCKING_COLOR] * n_tools
+    tick_labels = ranking_labels + [
+        name.replace("-", "-\n") if len(name) > 8 else name for name in tool_names
+    ]
+    bar_width = 0.45
+
+    bars = ax.bar(
+        x,
+        values,
+        color=colors,
+        edgecolor="white",
+        linewidth=0.8,
+        width=bar_width,
+        zorder=2,
+    )
+    _annotate_direct_bar_values(ax, bars, values)
+
     if n_tools:
         bracket_y = max(tool_values) + 10.0
         _draw_group_bracket(
@@ -547,28 +516,133 @@ def plot_direct_comparison(
         )
 
     ax.set_xticks(x)
-    ax.set_xticklabels(tick_labels, fontsize=8.5, fontweight="bold")
-    ax.tick_params(axis="x", pad=4)
-    ax.set_ylabel("Performance (%)", fontsize=11, fontweight="bold")
-    for label in ax.get_yticklabels():
-        label.set_fontsize(9.5)
-        label.set_fontweight("bold")
+    ax.set_xticklabels(tick_labels, fontsize=7.2, fontweight="bold")
+    ax.tick_params(axis="x", pad=3)
+    ax.set_xlim(float(x.min()) - 0.40, float(x.max()) + 0.40)
     y_top = max(105.0, (max(tool_values) if tool_values else 100.0) + 18.0)
-    ax.set_ylim(0, y_top)
-    ax.set_xlim(float(x.min()) - 0.7, float(x.max()) + 0.7)
-    ax.yaxis.grid(False)
-    ax.xaxis.grid(False)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    for side in ("left", "bottom"):
-        ax.spines[side].set_linewidth(1.4)
-    ax.tick_params(width=1.2)
+    _style_direct_axes(ax, y_top=y_top)
+
+    ax.legend(
+        handles=[
+            mpatches.Patch(
+                facecolor=DIRECT_COVSITE_COLOR,
+                edgecolor="white",
+                label=f"Hit rate top {top_pct_threshold:g}% / top {k} (full model)",
+            ),
+            mpatches.Patch(
+                facecolor=DIRECT_DOCKING_COLOR,
+                edgecolor="white",
+                label="% success <2Å RMSD (structural tools)",
+            ),
+        ],
+        loc="upper left",
+        bbox_to_anchor=(0.0, 1.02),
+        ncol=2,
+        frameon=False,
+        prop={"weight": "bold", "size": 8.0},
+        handlelength=1.2,
+        columnspacing=0.9,
+    )
+    _panel_title(ax, "A", pad=8)
+
+
+def plot_direct_panel_b(
+    ax: plt.Axes,
+    *,
+    covsite_top_pct: float,
+    random_top_pct: float,
+    covsite_top_k: float,
+    random_top_k: float,
+    k: int,
+    top_pct_threshold: float,
+    noncovalent_top_pct: float | None = None,
+    noncovalent_top_k: float | None = None,
+) -> None:
+    """Panel B: CovSite / non-covalent / random at top-X% and top K."""
+    include_noncovalent = (
+        noncovalent_top_pct is not None and noncovalent_top_k is not None
+    )
+
+    if include_noncovalent:
+        values = [
+            covsite_top_pct,
+            float(noncovalent_top_pct),
+            random_top_pct,
+            covsite_top_k,
+            float(noncovalent_top_k),
+            random_top_k,
+        ]
+        colors = [
+            DIRECT_COVSITE_COLOR,
+            DIRECT_NONCOVALENT_COLOR,
+            DIRECT_RANDOM_COLOR,
+            DIRECT_COVSITE_COLOR,
+            DIRECT_NONCOVALENT_COLOR,
+            DIRECT_RANDOM_COLOR,
+        ]
+        tick_labels = [
+            "CovSite",
+            "Non-\ncovalent",
+            "Random",
+            "CovSite",
+            "Non-\ncovalent",
+            "Random",
+        ]
+        x = np.array([0.0, 0.95, 1.90, 3.40, 4.35, 5.30])
+        group_specs = [
+            (0.0, 1.90, f"top {top_pct_threshold:g}%"),
+            (3.40, 5.30, f"top {k}"),
+        ]
+    else:
+        values = [covsite_top_pct, random_top_pct, covsite_top_k, random_top_k]
+        colors = [
+            DIRECT_COVSITE_COLOR,
+            DIRECT_RANDOM_COLOR,
+            DIRECT_COVSITE_COLOR,
+            DIRECT_RANDOM_COLOR,
+        ]
+        tick_labels = ["CovSite", "Random", "CovSite", "Random"]
+        x = np.array([0.0, 0.85, 2.25, 3.10])
+        group_specs = [
+            (0.0, 0.85, f"top {top_pct_threshold:g}%"),
+            (2.25, 3.10, f"top {k}"),
+        ]
+
+    bar_width = 0.45
+    bars = ax.bar(
+        x,
+        values,
+        color=colors,
+        edgecolor="white",
+        linewidth=0.8,
+        width=bar_width,
+        zorder=2,
+    )
+    _annotate_direct_bar_values(ax, bars, values)
+
+    for x_left, x_right, label in group_specs:
+        _draw_group_bracket(
+            ax,
+            float(x_left - bar_width * 0.45),
+            float(x_right + bar_width * 0.45),
+            99.0,
+            label,
+            color="#444444",
+            tick=2.0,
+            fontsize=8.0,
+        )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(tick_labels, fontsize=6.0, fontweight="bold", linespacing=0.95)
+    ax.tick_params(axis="x", pad=3)
+    ax.set_xlim(float(x.min()) - 0.60, float(x.max()) + 0.60)
+    _style_direct_axes(ax, y_top=112.0)
 
     legend_handles = [
         mpatches.Patch(
             facecolor=DIRECT_COVSITE_COLOR,
             edgecolor="white",
-            label=f"Hit rate @ top {top_pct_threshold:g}% (full model)",
+            label="Full model",
         ),
     ]
     if include_noncovalent:
@@ -576,37 +650,29 @@ def plot_direct_comparison(
             mpatches.Patch(
                 facecolor=DIRECT_NONCOVALENT_COLOR,
                 edgecolor="white",
-                label=f"Non-covalent model @ top {top_pct_threshold:g}% / top {k}",
+                label="Non-covalent",
             )
         )
-    legend_handles.extend(
-        [
-            mpatches.Patch(
-                facecolor=DIRECT_RANDOM_COLOR,
-                edgecolor="white",
-                label=(
-                    f"Random site detection @ top {top_pct_threshold:g}% / top {k}"
-                ),
-            ),
-            mpatches.Patch(
-                facecolor=DIRECT_DOCKING_COLOR,
-                edgecolor="white",
-                label="% success <2Å RMSD (structural tools)",
-            ),
-        ]
+    legend_handles.append(
+        mpatches.Patch(
+            facecolor=DIRECT_RANDOM_COLOR,
+            edgecolor="white",
+            label="Random",
+        )
     )
     ax.legend(
         handles=legend_handles,
-        loc="upper left",
-        bbox_to_anchor=(0.0, 1.02),
-        ncol=2 if not include_noncovalent else 3,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.0),
+        ncol=len(legend_handles),
         frameon=False,
-        fontsize=8.5,
-        prop={"weight": "bold", "size": 8.5},
-        handlelength=1.4,
+        prop={"weight": "bold", "size": 6.8},
+        handlelength=1.0,
+        handletextpad=0.35,
         columnspacing=1.0,
+        borderaxespad=0.0,
     )
-    _panel_title(ax, "A", pad=8)
+    _panel_title(ax, "B", pad=12)
 
 
 def plot_panel_b_pose_accuracy(
@@ -702,7 +768,7 @@ def plot_companion_table(
     ax: plt.Axes,
     rows: list[tuple[str, object]],
     *,
-    panel_label: str = "B",
+    panel_label: str = "C",
 ) -> None:
     """Two-column summary table styled like the reference benchmark figure."""
     ax.axis("off")
@@ -717,9 +783,9 @@ def plot_companion_table(
 
     table = ax.table(
         cellText=cell_text,
-        colWidths=[0.55, 0.25],
+        colWidths=[0.58, 0.28],
         loc="center",
-        bbox=[0.18, 0.05, 0.64, 0.85],
+        bbox=[0.02, 0.04, 0.96, 0.88],
         cellLoc="left",
     )
     table.auto_set_font_size(False)
@@ -863,33 +929,44 @@ def create_direct_comparison_figure(
     tool_values = [pct for _, pct, _ in docking_benchmarks]
     structural_mean = float(np.mean(tool_values))
 
-    fig = plt.figure(figsize=(16.5, 10.5), facecolor="white")
+    fig = plt.figure(figsize=(8.6, 9.6), facecolor="white")
     gs = fig.add_gridspec(
-        2,
-        1,
-        height_ratios=[1.55, 0.72],
-        hspace=0.28,
+        3,
+        3,
+        height_ratios=[1.12, 1.08, 0.78],
+        width_ratios=[0.18, 1.0, 0.18],
+        hspace=0.40,
+        wspace=0.08,
         left=0.07,
         right=0.98,
-        top=0.90,
-        bottom=0.08,
+        top=0.94,
+        bottom=0.04,
     )
 
-    ax = fig.add_subplot(gs[0, 0])
-    plot_direct_comparison(
-        ax,
+    ax_a = fig.add_subplot(gs[0, 1])
+    plot_direct_panel_a(
+        ax_a,
+        covsite_top_pct=covsite_top_pct_pct,
+        covsite_top_k=covsite_top_k_pct,
+        docking_benchmarks=docking_benchmarks,
+        k=k_eff,
+        top_pct_threshold=top_pct,
+    )
+
+    ax_b = fig.add_subplot(gs[1, 1])
+    plot_direct_panel_b(
+        ax_b,
         covsite_top_pct=covsite_top_pct_pct,
         random_top_pct=random_top_pct_pct,
         covsite_top_k=covsite_top_k_pct,
         random_top_k=random_top_k_pct,
-        docking_benchmarks=docking_benchmarks,
         k=k_eff,
         top_pct_threshold=top_pct,
         noncovalent_top_pct=noncovalent_top_pct_pct,
         noncovalent_top_k=noncovalent_top_k_pct,
     )
 
-    ax_table = fig.add_subplot(gs[1, 0])
+    ax_table = fig.add_subplot(gs[2, 1])
     table_rows = build_companion_table_rows(
         covsite_top_pct=covsite_top_pct_pct,
         random_top_pct=random_top_pct_pct,
@@ -904,23 +981,23 @@ def create_direct_comparison_figure(
         noncovalent_top_pct=noncovalent_top_pct_pct,
         noncovalent_top_k=noncovalent_top_k_pct,
     )
-    plot_companion_table(ax_table, table_rows)
+    plot_companion_table(ax_table, table_rows, panel_label="C")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=300, facecolor="white")
     plt.close(fig)
     print(f"Saved direct-comparison figure -> {output_path}")
-    print(f"  CovSite @ top-{top_pct:g}%:     {covsite_top_pct_pct:.1f}% (N={n_labels:,})")
+    print(f"  CovSite top {top_pct:g}%:     {covsite_top_pct_pct:.1f}% (N={n_labels:,})")
     if noncovalent_top_pct_pct is not None:
         print(
-            f"  Non-covalent @ top-{top_pct:g}%: "
+            f"  Non-covalent top {top_pct:g}%: "
             f"{noncovalent_top_pct_pct:.1f}%"
         )
-    print(f"  Random @ top-{top_pct:g}%:      {random_top_pct_pct:.1f}% (N={n_labels:,})")
-    print(f"  CovSite @ top-{k_eff}:          {covsite_top_k_pct:.1f}% (N={n_labels:,})")
+    print(f"  Random top {top_pct:g}%:      {random_top_pct_pct:.1f}% (N={n_labels:,})")
+    print(f"  CovSite top {k_eff}:          {covsite_top_k_pct:.1f}% (N={n_labels:,})")
     if noncovalent_top_k_pct is not None:
-        print(f"  Non-covalent @ top-{k_eff}:     {noncovalent_top_k_pct:.1f}%")
-    print(f"  Random @ top-{k_eff}:           {random_top_k_pct:.1f}% (N={n_labels:,})")
+        print(f"  Non-covalent top {k_eff}:     {noncovalent_top_k_pct:.1f}%")
+    print(f"  Random top {k_eff}:           {random_top_k_pct:.1f}% (N={n_labels:,})")
     print(f"  Structural site detection:    {structural_mean:.1f}% (mean of 6 tools)")
 
 
@@ -1068,8 +1145,8 @@ def parse_args() -> argparse.Namespace:
         "--direct-comparison",
         action="store_true",
         help=(
-            "Single portrait panel comparing ranked site detection, random baseline, "
-            "and mean structural screening performance (combines Panels A/B methodology)."
+            "Three-row direct comparison: A = CovSite + structural tools, "
+            "B = CovSite / non-covalent / random, C = summary table."
         ),
     )
     return p.parse_args()

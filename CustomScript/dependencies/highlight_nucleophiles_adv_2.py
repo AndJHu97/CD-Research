@@ -36,6 +36,16 @@ PRESERVE_HETATM_RESIDUES = {
 }
 
 
+def _cache_is_fresh(cache_path, source_path):
+    """True when cache exists and is at least as new as the source file."""
+    if not cache_path or not source_path or not os.path.exists(cache_path):
+        return False
+    try:
+        return os.path.getmtime(cache_path) >= os.path.getmtime(source_path)
+    except OSError:
+        return False
+
+
 def clean_pdb_for_sasa(pdb_path):
     """Write a cleaned PDB for SASA calculations.
 
@@ -44,7 +54,7 @@ def clean_pdb_for_sasa(pdb_path):
     """
     cleaned_path = os.path.splitext(os.path.abspath(pdb_path))[0] + "_sasa_cleaned.pdb"
 
-    if os.path.exists(cleaned_path):
+    if _cache_is_fresh(cleaned_path, pdb_path):
         return cleaned_path
 
     with open(pdb_path, "r") as handle_in, open(cleaned_path, "w") as handle_out:
@@ -99,7 +109,7 @@ def run_freesasa(pdb_path):
     rsa_file = os.path.join(sasa_output_dir, os.path.splitext(pdb_basename)[0] + "_sasa.rsa")
 
     cleaned_pdb = clean_pdb_for_sasa(pdb_path)
-    if os.path.exists(rsa_file):
+    if _cache_is_fresh(rsa_file, pdb_path) and _cache_is_fresh(rsa_file, cleaned_pdb):
         return rsa_file
 
     try:

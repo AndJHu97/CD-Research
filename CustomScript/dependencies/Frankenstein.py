@@ -177,6 +177,9 @@ ELECTROPHILE_WARHEADS = [
     ("Alpha-halo carbonyl", "[CX4;!R]([F,Cl,Br,I])C(=O)", 0, "soft"),
     ("Fluoromethyl ketone", "C(=O)CF", 1, "soft"),                # carbonyl carbon
 
+    # benzylic carbon; guanine is the leaving group (SNAP-tag/AGT-directed alkylation)
+    ("O6-benzylguanine (SNAP-tag warhead)", "[c][CH2]Oc1nc(N)nc2[n,nH]c[n,nH]c12", 1, "soft"),
+      
     # Epoxides and aziridines
     ("Epoxide", "[CX4;r3]1[OX2;r3][CX4;r3]1", 0, "hard"),
     ("Alpha-beta epoxyketone (epoxide)", "[CX3](=O)[CX4;r3]1[OX2;r3][CX4;r3]1", 2, "borderline"),
