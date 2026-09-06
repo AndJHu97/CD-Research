@@ -8,7 +8,8 @@ plus a saved LightGBM ranker
 ## Pipeline
 
 1. Read input CSV (PDB + SMILES and/or LigID; optional target site).
-2. Detect warheads and compute deprotonated xTB descriptors per residue type.
+2. Detect warheads and compute deprotonated xTB descriptors per residue type
+   (`--no-warhead` skips this; reactivity columns are NaN).
 3. Build candidate sites (CYS, SER, THR, TYR, LYS, HIS) with SASA + deprotonation probability.
 4. Enrich with residue / N-terminal / ligand / interaction features.
 5. Write candidates (+ labels when valid targets exist).
@@ -53,8 +54,9 @@ Multiple target sites for the same PDB + SMILES are supported. CovSite makes
 `Name` unique per site (suffix like `-ACYS25`) so each Name × Warhead group still
 has one evaluation target.
 
-Fully skipped rows (invalid SMILES, no warhead, LigID/PDB failures, descriptor
-failures) are written to `covsite_skipped_inputs.csv` with a reason and detail.
+Fully skipped rows (invalid SMILES, no warhead unless `--no-warhead`, LigID/PDB
+failures, descriptor failures) are written to `covsite_skipped_inputs.csv` with
+a reason and detail.
 
 ## Full run
 
@@ -72,6 +74,9 @@ Useful options:
 | Flag | Purpose |
 |---|---|
 | `--no-cache` | Recalculate xTB descriptors (ignore `reactivity_cache.json`) |
+| `--ions` | Include crystallographic ions in FreeSASA / deprotonation SASA (separate `*_sasa_ions_v4.rsa` cache) |
+| `--skip-sasa-deprot` | With `--VS` only: skip FreeSASA and deprotonation; confirm the target from ATOM records; `Abs_Side_SASA` / `Rel_Side_SASA` / `deprotonation_prob` are NaN. `--ions` has no effect. |
+| `--no-warhead` | Skip warhead SMARTS detection and xTB; `Warhead=none`; Fukui/HOMO/LUMO/... are NaN |
 | `--deprotonation-model PATH` | Override default `deprot_xgb_noapbs.pkl` |
 | `--scripts-dir PATH` | Override `dependencies/` |
 | `--topk`, `--reward-mode`, `--top-pct` | Cov_Screen hit metrics |
@@ -107,6 +112,59 @@ Labels should use **`Frankenstein_Warhead`** (not bare `Warhead`) to match
 candidates. Candidates use column `Warhead`.
 
 `--pdb-dir` and `input_csv` are not required in screen-only mode.
+
+## Virtual screening (`--VS`)
+
+`--VS` featurizes only each row's target site (Residue / ResNum / Chain required) and skips Cov_Screen ranking. Combined with `--skip-sasa-deprot`, CovSite does not run FreeSASA or load `deprot_xgb_noapbs.pkl`; it only checks that the nucleophile exists in ATOM records. Residue geometry, ligand, and interaction features are still computed.
+
+```bash
+python CovSite.py library.csv \
+  --VS --skip-sasa-deprot \
+  --pdb-dir Existing_Structures \
+  --output-dir ./covsite_vs_features
+```
+
+## Ligand screening ranker
+
+`Training_CovSite_VS.py` trains a LightGBM LambdaRank model to rank **ligands at a fixed covalent site**. It calls CovSite `--VS` (passing `--skip-sasa-deprot` unless `--sasa-deprot` is set) or reuses `--candidates`. Cross-validation is **leave-one-site-out**: each fold holds out one `PDB_ID × Residue × ResNum × Chain`. Same PDB, two residues → two folds.
+
+```bash
+python Training_CovSite_VS.py library.csv hits.csv \
+  --pdb-dir Existing_Structures \
+  --features Geo_Fit Hydrophobic_Fit Hydrogen_DPAL_Fit \
+  --output-dir ./covsite_vs_ranker \
+  --best-warhead
+```
+
+Reuse an existing CovSite candidates table:
+
+```bash
+python Training_CovSite_VS.py library.csv hits.csv \
+  --candidates covsite_candidates.csv \
+  --features Geo_Fit Hydrophobic_Fit \
+  --output-dir ./covsite_vs_ranker
+```
+
+**Library CSV** (one ligand at one site per row): `pdb` / `pdb_id`, `smiles`, `residue`, `resnum`, `chain` (optional `name`, `warhead`).
+
+**Hits CSV** (one file): `pdb_id` plus `Electrophile_Hit` / `electrophile_hit` (RDKit canonical SMILES, matched with `pdb_id`). Optional `Name_Hit`, `warhead_type` (restricts `Warhead_Base`; comma-separated allowed). TOPSIS-style miss columns are also accepted.
+
+`--features` are CovSite candidate headers. Columns that are constant inside every site group are dropped with a warning (site-level SASA / deprotonation never rank ligands). Univariate feature stats rank higher values as better. Sites with fewer than 2 candidates or 0 hits are skipped (EF undefined).
+
+`--best-warhead` keeps the highest `pred_score` warhead per SMILES × site. `--multiple-hits` counts each Name × Warhead × SMILES as its own hit for EF / LogAUC.
+
+Outputs (same metric set as TOPSIS_VS, using LGBM `pred_score`):
+
+| File | Description |
+|---|---|
+| `lgbm_per_site_ranking.csv` | Held-out site rankings |
+| `lgbm_pooled_pair_ranking.csv` | Concatenated OOF pairs ranked together |
+| `full_pooled_ligand_ranking.csv` | Ligand-level list (best warhead per SMILES × site if `--best-warhead`) |
+| `hit_per_site_ranks.csv` / `hit_pooled_pair_ranks.csv` | Hit subsets |
+| `enrichment_factors.csv` | EF@1/5/10% + LogAUC / adjusted LogAUC |
+| `feature_statistics.csv` / `feature_enrichment_factors.csv` | Univariate feature ranks |
+| `matched_site_warhead_rows.csv` / `unmatched_hit_names.csv` | Audit |
+| `models/fold_*.pkl` | Per-fold rankers (`--no-save-models` to skip) |
 
 ## Outputs
 

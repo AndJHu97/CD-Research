@@ -101,7 +101,7 @@ def save_prediction_cache(cache: Dict[str, dict]) -> None:
 
 def make_prediction_cache_key(pdb_path: str, chain: str, resname: str, resseq: int,
                               model_path: str, apbs_radius: float, hbond_radius: float,
-                              ph: float, use_apbs: bool) -> str:
+                              ph: float, use_apbs: bool, include_ions: bool = False) -> str:
     pdb_path_abs = os.path.abspath(pdb_path)
     model_path_abs = os.path.abspath(model_path)
     pdb_mtime = os.path.getmtime(pdb_path_abs) if os.path.exists(pdb_path_abs) else 0.0
@@ -118,12 +118,51 @@ def make_prediction_cache_key(pdb_path: str, chain: str, resname: str, resseq: i
         f"hbond_radius={float(hbond_radius)}",
         f"ph={float(ph)}",
         f"use_apbs={int(bool(use_apbs))}",
+        f"include_ions={int(bool(include_ions))}",
+        # Bump when ion radii / FreeSASA ion handling changes.
+        f"ion_sasa_version={4 if include_ions else 0}",
     ])
 
 
-# ---------------------------------------------------------------------------
-# PDB utilities
-# ---------------------------------------------------------------------------
+WATER_RESIDUES = {"HOH", "WAT", "H2O", "DOD", "SOL"}
+ION_HETATM_RESIDUES = {
+    "NA", "NA1", "K", "K1", "CA", "CA2", "MG", "MG2", "ZN", "ZN2",
+    "MN", "MN2", "FE", "FE2", "FE3", "CU", "CO", "NI", "CL", "BR", "IOD",
+}
+def _ensure_ion_sasa_pdb(pdb_path: str) -> str:
+    """Protein ATOM records only; ions are added later via addAtom()."""
+    out_path = os.path.splitext(os.path.abspath(pdb_path))[0] + "_sasa_cleaned_ions_v4.pdb"
+    if os.path.isfile(out_path) and os.path.getmtime(out_path) >= os.path.getmtime(pdb_path):
+        return out_path
+    with open(pdb_path, encoding="utf-8", errors="replace") as handle_in, open(
+        out_path, "w", encoding="utf-8"
+    ) as handle_out:
+        for line in handle_in:
+            record = line[:6].replace("\t", " ").strip().upper()
+            if record == "ATOM":
+                handle_out.write(line)
+    return out_path
+
+
+def _extract_ion_coords(pdb_path: str):
+    ions = []
+    with open(pdb_path, encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            record = line[:6].replace("\t", " ").strip().upper()
+            if record != "HETATM" or len(line) < 54:
+                continue
+            resname = line[17:20].strip().upper()
+            if resname in WATER_RESIDUES or resname not in ION_HETATM_RESIDUES:
+                continue
+            ions.append(
+                (
+                    float(line[30:38]),
+                    float(line[38:46]),
+                    float(line[46:54]),
+                    resname,
+                )
+            )
+    return ions
 
 def find_pdb_path(pdb_id_or_path: str, pdb_dir: str) -> str:
     if os.path.isfile(pdb_id_or_path):
@@ -271,7 +310,13 @@ def compute_charged_residue_counts(pdb_path: str, chain: str, resname: str, ress
 # SASA
 # ---------------------------------------------------------------------------
 
-def compute_sasa_freesasa(pdb_path: str, chain: str, resseq: int, resname: str) -> Optional[float]:
+def compute_sasa_freesasa(
+    pdb_path: str,
+    chain: str,
+    resseq: int,
+    resname: str,
+    include_ions: bool = False,
+) -> Optional[float]:
     try:
         import freesasa
     except ImportError:
@@ -279,7 +324,23 @@ def compute_sasa_freesasa(pdb_path: str, chain: str, resseq: int, resname: str) 
         return np.nan
 
     try:
-        structure = freesasa.Structure(pdb_path)
+        if include_ions:
+            structure_path = _ensure_ion_sasa_pdb(pdb_path)
+            structure = freesasa.Structure(structure_path)
+            ion_coords = _extract_ion_coords(pdb_path)
+            added = 0
+            for i, (x, y, z, resname) in enumerate(ion_coords, start=1):
+                try:
+                    structure.addAtom("CA", "ALA", str(9000 + i), "Z", x, y, z)
+                    added += 1
+                except Exception as exc:
+                    print(f"[sasa] WARNING: addAtom failed for {resname}: {exc}")
+            if added == 0:
+                print("[sasa] WARNING: --ions is on but no ion atoms were added.")
+            else:
+                print(f"[sasa] Added {added} ion atom(s) via addAtom (ALA CA chain Z)")
+        else:
+            structure = freesasa.Structure(pdb_path)
         result = freesasa.calc(structure)
         rsa = result.residueAreas()  # per-residue breakdown including relative areas
 
@@ -299,7 +360,11 @@ def compute_sasa_freesasa(pdb_path: str, chain: str, resseq: int, resname: str) 
         sasa_df = pd.DataFrame(rows, columns=["chain", "resnum", "resname", "side_sasa"])
 
         pdb_base = os.path.splitext(pdb_path)[0]
-        out_path = f"{pdb_base}_deprot_sasa.csv"
+        out_path = (
+            f"{pdb_base}_deprot_sasa_ions_v4.csv"
+            if include_ions
+            else f"{pdb_base}_deprot_sasa.csv"
+        )
         sasa_df.to_csv(out_path, index=False)
         print(f"[sasa] Saved computed SASA to {out_path}")
 
@@ -318,15 +383,24 @@ def compute_sasa_freesasa(pdb_path: str, chain: str, resseq: int, resname: str) 
         return np.nan
 
 
-def load_sasa(pdb_path: str, chain: str, resseq: int, resname: str) -> Optional[float]:
+def load_sasa(
+    pdb_path: str,
+    chain: str,
+    resseq: int,
+    resname: str,
+    include_ions: bool = False,
+) -> Optional[float]:
     pdb_dir = os.path.dirname(pdb_path)
     pdb_base = os.path.splitext(os.path.basename(pdb_path))[0]
-    candidates = [
-        os.path.join(pdb_dir, f"{pdb_base}_deprot_sasa.csv"),
-        os.path.join(pdb_dir, f"{pdb_base}_sasa.csv"),
-        os.path.join(pdb_dir, f"{pdb_base}_pdb_sasa.csv"),
-        os.path.join(pdb_dir, "pdb_sasa.csv"),
-    ]
+    if include_ions:
+        candidates = [os.path.join(pdb_dir, f"{pdb_base}_deprot_sasa_ions_v4.csv")]
+    else:
+        candidates = [
+            os.path.join(pdb_dir, f"{pdb_base}_deprot_sasa.csv"),
+            os.path.join(pdb_dir, f"{pdb_base}_sasa.csv"),
+            os.path.join(pdb_dir, f"{pdb_base}_pdb_sasa.csv"),
+            os.path.join(pdb_dir, "pdb_sasa.csv"),
+        ]
     for path in candidates:
         if not os.path.isfile(path):
             continue
@@ -349,7 +423,9 @@ def load_sasa(pdb_path: str, chain: str, resseq: int, resname: str) -> Optional[
             return float(match.iloc[0][sasa_col])
 
     print(f"[sasa] No CSV found for {chain}:{resname}:{resseq}, computing via freesasa...")
-    return compute_sasa_freesasa(pdb_path, chain, resseq, resname)
+    return compute_sasa_freesasa(
+        pdb_path, chain, resseq, resname, include_ions=include_ions
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -423,7 +499,8 @@ def run_hbonds(pdb_path: str, residue_spec: str, radius: float) -> Dict[str, flo
 
 
 def build_features(pdb_path: str, chain: str, resname: str, resseq: int,
-                   apbs_radius: float, hbond_radius: float, ph: float, use_apbs: bool = True) -> pd.DataFrame:
+                   apbs_radius: float, hbond_radius: float, ph: float,
+                   use_apbs: bool = True, include_ions: bool = False) -> pd.DataFrame:
     residue_spec = f"{chain}:{resname}:{resseq}"
 
     # Extract MODEL 1 to handle multi-model NMR structures
@@ -437,7 +514,7 @@ def build_features(pdb_path: str, chain: str, resname: str, resseq: int,
     if np.isnan(ref_pka):
         print(f"[warn] No reference pKa for {resname} — ref_pka will be NaN")
 
-    sasa = load_sasa(pdb_path, chain, resseq, resname)
+    sasa = load_sasa(pdb_path, chain, resseq, resname, include_ions=include_ions)
     if use_apbs:
         apbs = run_apbs(clean_pdb, residue_spec, apbs_radius, ph)
     else:

@@ -28,9 +28,13 @@ SASA_CUTOFFS = {
 
 WATER_RESIDUES = {"HOH", "WAT", "H2O", "DOD", "SOL"}
 
-PRESERVE_HETATM_RESIDUES = {
-    "NA", "NA1", "K", "K1", "CA", "CA2", "MG", "MG2", "ZN", "ZN2", "MN", "MN2", "FE", "FE2", "FE3", "CU", "CO", "NI", "CL",
-    "BR", "IOD", "SO4", "PO4", "HEM", "HEME", "FAD", "FMN", "NAD",
+ION_HETATM_RESIDUES = {
+    "NA", "NA1", "K", "K1", "CA", "CA2", "MG", "MG2", "ZN", "ZN2",
+    "MN", "MN2", "FE", "FE2", "FE3", "CU", "CO", "NI", "CL", "BR", "IOD",
+}
+
+PRESERVE_HETATM_RESIDUES = ION_HETATM_RESIDUES | {
+    "SO4", "PO4", "HEM", "HEME", "FAD", "FMN", "NAD",
     "NAP", "SAM", "SAH", "GDP", "GTP", "ADP", "ATP", "CMP", "UMP", "GMP",
     "AMP", "FUC", "MAN", "NAG", "BMA", "MSE",
 }
@@ -46,20 +50,75 @@ def _cache_is_fresh(cache_path, source_path):
         return False
 
 
-def clean_pdb_for_sasa(pdb_path):
+def _pdb_record_name(line):
+    return line[:6].replace("\t", " ").strip().upper()
+
+
+def extract_ion_coords(pdb_path):
+    """Return (x, y, z, resname) for crystallographic ion HETATM."""
+    ions = []
+    with open(pdb_path, encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            if _pdb_record_name(line) != "HETATM" or len(line) < 54:
+                continue
+            resname = line[17:20].strip().upper()
+            if resname in WATER_RESIDUES or resname not in ION_HETATM_RESIDUES:
+                continue
+            ions.append(
+                (
+                    float(line[30:38]),
+                    float(line[38:46]),
+                    float(line[46:54]),
+                    resname,
+                )
+            )
+    return ions
+
+
+def make_freesasa_structure(pdb_path, include_ions=False, ion_coords=None):
+    """Build a FreeSASA Structure; ions are addAtom() spheres, not HETATM."""
+    freesasa = importlib.import_module("freesasa")
+    structure = freesasa.Structure(pdb_path)
+    if not include_ions:
+        return structure
+
+    added = 0
+    for i, (x, y, z, resname) in enumerate(ion_coords or (), start=1):
+        try:
+            # ALA CA is in the default classifier; residue ZN is not.
+            structure.addAtom("CA", "ALA", str(9000 + i), "Z", x, y, z)
+            added += 1
+        except Exception as exc:
+            print(f"[freesasa] WARNING: addAtom failed for {resname}: {exc}")
+    if added == 0:
+        print(
+            "[freesasa] WARNING: --ions is on but no ion atoms were added. "
+            "Check that Zn/Mg/Ca HETATM are present in the PDB."
+        )
+    else:
+        print(f"[freesasa] Added {added} ion atom(s) via addAtom (ALA CA chain Z)")
+    return structure
+
+
+def clean_pdb_for_sasa(pdb_path, include_ions=False):
     """Write a cleaned PDB for SASA calculations.
 
-    Keeps ATOM records, removes common waters, and drops nonessential HETATM
-    ligands while preserving a small allowlist of common ions/cofactors.
+    Keeps ATOM records and drops waters. Without include_ions, a small
+    allowlist of ions/cofactors is written but FreeSASA still ignores HETATM
+    by default. With include_ions, HETATM are dropped here and ions are added
+    later with FreeSASA addAtom() using a known ALA CA probe.
     """
-    cleaned_path = os.path.splitext(os.path.abspath(pdb_path))[0] + "_sasa_cleaned.pdb"
+    suffix = "_sasa_cleaned_ions_v4.pdb" if include_ions else "_sasa_cleaned.pdb"
+    cleaned_path = os.path.splitext(os.path.abspath(pdb_path))[0] + suffix
 
     if _cache_is_fresh(cleaned_path, pdb_path):
         return cleaned_path
 
+    hetatm_keep = PRESERVE_HETATM_RESIDUES if not include_ions else set()
+
     with open(pdb_path, "r") as handle_in, open(cleaned_path, "w") as handle_out:
         for line in handle_in:
-            record = line[:6].strip().upper()
+            record = _pdb_record_name(line)
             if record == "ATOM":
                 handle_out.write(line)
                 continue
@@ -70,7 +129,7 @@ def clean_pdb_for_sasa(pdb_path):
             resname = line[17:20].strip().upper()
             if resname in WATER_RESIDUES:
                 continue
-            if resname in PRESERVE_HETATM_RESIDUES:
+            if resname in hetatm_keep:
                 handle_out.write(line)
 
     return cleaned_path
@@ -97,7 +156,7 @@ def estimate_electrophile_sasa(smiles):
     sasa = rdFreeSASA.CalcSASA(mol_h, atom_radii)
     return sasa
 
-def run_freesasa(pdb_path):
+def run_freesasa(pdb_path, include_ions=False):
     """Run FreeSASA via Python API and save RSA-style output to organized directory."""
     # Create sasa_output directory in the same location as the PDB file
     pdb_dir = os.path.dirname(os.path.abspath(pdb_path))
@@ -106,20 +165,34 @@ def run_freesasa(pdb_path):
     
     # Save .rsa file in the sasa_output directory
     pdb_basename = os.path.basename(pdb_path)
-    rsa_file = os.path.join(sasa_output_dir, os.path.splitext(pdb_basename)[0] + "_sasa.rsa")
+    rsa_stem = os.path.splitext(pdb_basename)[0]
+    rsa_suffix = "_sasa_ions_v4.rsa" if include_ions else "_sasa.rsa"
+    rsa_file = os.path.join(sasa_output_dir, rsa_stem + rsa_suffix)
 
-    cleaned_pdb = clean_pdb_for_sasa(pdb_path)
+    cleaned_pdb = clean_pdb_for_sasa(pdb_path, include_ions=include_ions)
     if _cache_is_fresh(rsa_file, pdb_path) and _cache_is_fresh(rsa_file, cleaned_pdb):
         return rsa_file
 
+    ion_coords = extract_ion_coords(pdb_path) if include_ions else []
     try:
         freesasa = importlib.import_module("freesasa")
+        structure = make_freesasa_structure(
+            cleaned_pdb, include_ions=include_ions, ion_coords=ion_coords
+        )
     except ImportError as exc:
         raise FileNotFoundError("freesasa Python package not installed") from exc
-
-    structure = freesasa.Structure(cleaned_pdb)
     result = freesasa.calc(structure)
     residue_areas = result.residueAreas()
+    if include_ions:
+        dummy_chains = [
+            str(chain_id)
+            for chain_id in residue_areas
+            if str(chain_id).strip() == "Z"
+        ]
+        print(
+            f"[freesasa] Dummy ion chain present in SASA: "
+            f"{bool(dummy_chains)} (atoms requested={len(ion_coords)})"
+        )
 
     with open(rsa_file, "w") as handle:
         for chain_id, residues in residue_areas.items():

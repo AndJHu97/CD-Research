@@ -41,6 +41,10 @@ Virtual-screening mode (--VS) requires Residue/ResNum/Chain on every input row
 and calculates features only for that target site × ligand warhead pair
 (no whole-protein nucleophile enumeration). It writes the usual candidates /
 labels CSVs and does not run Cov_Screen ranking.
+
+--skip-sasa-deprot (with --VS) confirms the target from ATOM records and leaves
+Abs/Rel_Side_SASA and deprotonation_prob as NaN, skipping FreeSASA and the
+deprotonation model. Use it when those columns are unused (ligand screening).
 """
 
 from __future__ import annotations
@@ -69,6 +73,7 @@ from rdkit import Chem
 HERE = Path(__file__).resolve().parent
 DEPENDENCIES_DIR = HERE / "dependencies"
 VALID_RESIDUES = ("CYS", "SER", "THR", "TYR", "LYS", "HIS")
+HIS_VARIANTS = {"HIE", "HID", "HIP"}
 DESCRIPTOR_COLUMNS = (
     "Fukui_Deprotonated",
     "Nucleophile_HOMO_Deprotonated",
@@ -77,6 +82,7 @@ DESCRIPTOR_COLUMNS = (
     "Partial_Charge_Deprotonated",
     "Nucleophilicity_Index_Deprotonated",
 )
+NO_WARHEAD_LABEL = "none"
 FINAL_CANDIDATES_GLOB = "covsite_candidates_*.csv"
 FINAL_LABELS_GLOB = "covsite_labels_*.csv"
 
@@ -155,6 +161,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--skip-sasa-deprot",
+        action="store_true",
+        help=(
+            "With --VS only: skip FreeSASA and deprotonation. Confirm the "
+            "target exists from ATOM records; Abs_Side_SASA, Rel_Side_SASA, "
+            "and deprotonation_prob are NaN so the candidate schema stays "
+            "stable. --ions has no effect. Speeds ligand screening when "
+            "those columns are unused."
+        ),
+    )
+    parser.add_argument(
         "--candidates",
         default=None,
         help=(
@@ -195,6 +212,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-cache", action="store_true", help="Recalculate cached xTB descriptors"
     )
+    parser.add_argument(
+        "--ions",
+        action="store_true",
+        help=(
+            "Include crystallographic ions (Zn, Mg, Ca, Na, ...) in FreeSASA "
+            "and deprotonation SASA. Default FreeSASA skips HETATM, so ions "
+            "are ignored unless this flag is set. Geometry tools already "
+            "read HETATM. Uses a separate SASA cache (*_sasa_ions_v4.rsa)."
+        ),
+    )
+    parser.add_argument(
+        "--no-warhead",
+        action="store_true",
+        help=(
+            "Skip electrophile warhead detection and xTB reactivity "
+            "descriptors (Fukui, HOMO, LUMO, gap, charge, nucleophilicity). "
+            "Candidates still get SASA, deprotonation, residue, ligand, and "
+            "fit features. Warhead is set to 'none' so Name × Warhead "
+            "grouping still works. The default ranker was trained with "
+            "reactivity columns; those are left as NaN."
+        ),
+    )
     parser.add_argument("--topk", type=int, default=None)
     parser.add_argument(
         "--reward-mode", choices=("hit_at_k", "hit_at_top_pct"), default=None
@@ -209,6 +248,8 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.vs and args.screen_only:
         parser.error("--VS and --screen-only cannot be used together")
+    if args.skip_sasa_deprot and not args.vs:
+        parser.error("--skip-sasa-deprot requires --VS")
     if args.screen_only:
         if not args.candidates:
             parser.error("--screen-only requires --candidates")
@@ -383,8 +424,12 @@ def resolve_smiles_from_ligid(
     return Chem.MolToSmiles(molecule, canonical=True)
 
 
-def sasa_rows(pdb_path: Path, frankenstein: ModuleType) -> pd.DataFrame:
-    rsa_path = frankenstein.hn_adv.run_freesasa(str(pdb_path))
+def sasa_rows(
+    pdb_path: Path, frankenstein: ModuleType, include_ions: bool = False
+) -> pd.DataFrame:
+    rsa_path = frankenstein.hn_adv.run_freesasa(
+        str(pdb_path), include_ions=include_ions
+    )
     exposure = frankenstein.hn_adv.parse_rsa_file(rsa_path)
     rows: list[dict[str, Any]] = []
     for (residue, chain, resnum), (abs_sasa, rel_sasa) in exposure.items():
@@ -428,12 +473,59 @@ def filter_sites_to_target(
     return sites.loc[mask].copy()
 
 
+def atom_nucleophile_rows(pdb_path: Path) -> pd.DataFrame:
+    """Nucleophilic residues from ATOM records (no FreeSASA).
+
+    HIS protonation variants (HID/HIE/HIP) are mapped to HIS. Altloc is
+    restricted to blank or A. Used by --VS --skip-sasa-deprot to confirm a
+    target exists without computing SASA.
+    """
+    seen: set[tuple[str, str, str]] = set()
+    rows: list[dict[str, str]] = []
+    with pdb_path.open(encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            if not line.startswith("ATOM"):
+                continue
+            if len(line) < 26:
+                continue
+            altloc = line[16:17]
+            if altloc not in {" ", ""} and altloc != "A":
+                continue
+            residue = line[17:20].strip().upper()
+            if residue in HIS_VARIANTS:
+                residue = "HIS"
+            if residue not in VALID_RESIDUES:
+                continue
+            chain = line[21:22].strip() if len(line) > 21 else ""
+            resnum = normalized_resnum(line[22:26] if len(line) >= 26 else "")
+            if not resnum:
+                continue
+            key = (residue, chain, resnum)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append({"Residue": residue, "Chain": chain, "ResNum": resnum})
+    if not rows:
+        return pd.DataFrame(columns=["Residue", "Chain", "ResNum"])
+    return pd.DataFrame(rows)
+
+
+def stub_site_sasa_deprot(sites: pd.DataFrame) -> pd.DataFrame:
+    """Keep the candidate schema with NaN SASA / deprotonation columns."""
+    out = sites.copy()
+    out["Abs_Side_SASA"] = np.nan
+    out["Rel_Side_SASA"] = np.nan
+    out["deprotonation_prob"] = np.nan
+    return out
+
+
 def predict_deprotonation(
     sites: pd.DataFrame,
     pdb_path: Path,
     model_path: Path,
     pipeline: Any,
     deprot_module: ModuleType,
+    include_ions: bool = False,
 ) -> tuple[pd.DataFrame, list[str]]:
     cache = deprot_module.load_prediction_cache()
     errors: list[str] = []
@@ -445,6 +537,7 @@ def predict_deprotonation(
         cache_key = deprot_module.make_prediction_cache_key(
             str(pdb_path), chain, residue, resnum, str(model_path),
             12.0, 6.0, deprot_module.PHYSIOLOGIC_PH, False,
+            include_ions=include_ions,
         )
         cached = cache.get(cache_key, {})
         if "deprotonation_prob" in cached:
@@ -460,6 +553,7 @@ def predict_deprotonation(
                 6.0,
                 deprot_module.PHYSIOLOGIC_PH,
                 use_apbs=False,
+                include_ions=include_ions,
             )
             probability = float(np.clip(pipeline.predict(features)[0], 0.0, 1.0))
             probabilities.append(probability)
@@ -471,6 +565,31 @@ def predict_deprotonation(
     out = sites.copy()
     out["deprotonation_prob"] = probabilities
     return out, errors
+
+
+def placeholder_warhead() -> dict[str, Any]:
+    """Single dummy warhead used with --no-warhead."""
+    return {
+        "Warhead": NO_WARHEAD_LABEL,
+        "Warhead_Base": NO_WARHEAD_LABEL,
+        "Warhead_SMARTS": "",
+        "Reactive_Atom_Index": -1,
+        "Warhead_Instance": 1,
+        "HSAB_Class": "",
+    }
+
+
+def empty_deprotonated_descriptors(
+    residues: tuple[str, ...] | None = None,
+) -> dict[str, dict[str, float]]:
+    residue_types = residues if residues is not None else VALID_RESIDUES
+    blank = {column: float(np.nan) for column in DESCRIPTOR_COLUMNS}
+    result: dict[str, dict[str, float]] = {}
+    for residue in residue_types:
+        residue = str(residue).strip().upper()
+        if residue in VALID_RESIDUES:
+            result[residue] = dict(blank)
+    return result
 
 
 def unique_warheads(
@@ -1062,6 +1181,27 @@ def main() -> None:
     output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     pdb_dir.mkdir(parents=True, exist_ok=True)
+    if args.skip_sasa_deprot:
+        print(
+            "[CovSite] --skip-sasa-deprot: skipping FreeSASA and "
+            "deprotonation; Abs/Rel_Side_SASA and deprotonation_prob are NaN"
+        )
+        if args.ions:
+            print(
+                "[CovSite] --ions has no effect with --skip-sasa-deprot "
+                "(nothing to occlude)"
+            )
+    elif args.ions:
+        print(
+            "[CovSite] --ions: FreeSASA and deprotonation SASA include "
+            "crystallographic ions (Zn, Mg, Ca, Na, ...)"
+        )
+    if args.no_warhead:
+        print(
+            "[CovSite] --no-warhead: skipping electrophile detection and xTB "
+            "reactivity descriptors (Fukui/HOMO/LUMO/... set to NaN; "
+            f"Warhead={NO_WARHEAD_LABEL!r})"
+        )
 
     roots = script_search_roots(args.scripts_dir)
     frankenstein_path = locate_file("Frankenstein.py", roots)
@@ -1072,15 +1212,18 @@ def main() -> None:
     cov_screen_path = (
         None if args.vs else locate_file("Cov_Screen.py", roots)
     )
-    deprot_script_path = locate_file("Deprotonation_Model.py", roots)
-
-    deprot_model_path = (
-        Path(args.deprotonation_model).resolve()
-        if args.deprotonation_model
-        else locate_file("deprot_xgb_noapbs.pkl", roots)
-    )
-    if deprot_model_path is None:
-        raise FileNotFoundError("No deprotonation model was found")
+    deprot_script_path = None
+    deprot_model_path = None
+    deprot_module = None
+    if not args.skip_sasa_deprot:
+        deprot_script_path = locate_file("Deprotonation_Model.py", roots)
+        deprot_model_path = (
+            Path(args.deprotonation_model).resolve()
+            if args.deprotonation_model
+            else locate_file("deprot_xgb_noapbs.pkl", roots)
+        )
+        if deprot_model_path is None:
+            raise FileNotFoundError("No deprotonation model was found")
 
     frankenstein = load_module("covsite_frankenstein", frankenstein_path)
     # Share xTB caches with standalone `python Frankenstein.py` in this project
@@ -1094,7 +1237,10 @@ def main() -> None:
         "covsite_add_interaction_info", interaction_path
     )
     nterminal_module = load_module("covsite_adding_n_terminal", nterminal_path)
-    deprot_module = load_module("covsite_deprotonation_model", deprot_script_path)
+    if deprot_script_path is not None:
+        deprot_module = load_module(
+            "covsite_deprotonation_model", deprot_script_path
+        )
 
     raw = pd.read_csv(input_path, low_memory=False).reset_index(drop=True)
     if raw.empty:
@@ -1277,7 +1423,11 @@ def main() -> None:
         name for name, sites in supplied_name_sites.items() if len(sites) > 1
     }
 
-    deprot_pipeline = joblib.load(deprot_model_path)
+    deprot_pipeline = (
+        None
+        if args.skip_sasa_deprot
+        else joblib.load(deprot_model_path)
+    )
     reactivity_cache = frankenstein.load_reactivity_cache()
     nucleophile_cache = frankenstein.load_nucleophile_cache()
     # In VS mode, cache FreeSASA rows only and deprotonate the requested site
@@ -1323,7 +1473,12 @@ def main() -> None:
                     pdb_path = resolved_pdb_paths.get(pdb_id)
                     if pdb_path is None:
                         pdb_path = resolve_pdb(pdb_id, pdb_dir, residue_module)
-                    sasa_sites = sasa_rows(pdb_path, frankenstein)
+                    if args.skip_sasa_deprot:
+                        sasa_sites = atom_nucleophile_rows(pdb_path)
+                    else:
+                        sasa_sites = sasa_rows(
+                            pdb_path, frankenstein, include_ions=args.ions
+                        )
                     pdb_sasa_cache[pdb_id] = (pdb_path, sasa_sites)
                 except Exception as exc:
                     detail = str(exc)
@@ -1370,10 +1525,18 @@ def main() -> None:
                     f"{input_row['_source_row']} ({reason}): {detail}"
                 )
                 continue
-            sites, deprot_errors = predict_deprotonation(
-                sites, pdb_path, deprot_model_path, deprot_pipeline, deprot_module
-            )
-            warnings.extend(deprot_errors)
+            if args.skip_sasa_deprot:
+                sites = stub_site_sasa_deprot(sites)
+            else:
+                sites, deprot_errors = predict_deprotonation(
+                    sites,
+                    pdb_path,
+                    deprot_model_path,
+                    deprot_pipeline,
+                    deprot_module,
+                    include_ions=args.ions,
+                )
+                warnings.extend(deprot_errors)
             row_has_valid_target = True
             chemistry_key: Any = (smiles, target_residue)
             residue_filter: tuple[str, ...] | None = (target_residue,)
@@ -1383,13 +1546,16 @@ def main() -> None:
                     pdb_path = resolved_pdb_paths.get(pdb_id)
                     if pdb_path is None:
                         pdb_path = resolve_pdb(pdb_id, pdb_dir, residue_module)
-                    sites = sasa_rows(pdb_path, frankenstein)
+                    sites = sasa_rows(
+                        pdb_path, frankenstein, include_ions=args.ions
+                    )
                     sites, deprot_errors = predict_deprotonation(
                         sites,
                         pdb_path,
                         deprot_model_path,
                         deprot_pipeline,
                         deprot_module,
+                        include_ions=args.ions,
                     )
                     warnings.extend(deprot_errors)
                     pdb_cache[pdb_id] = (pdb_path, sites)
@@ -1443,38 +1609,54 @@ def main() -> None:
             residue_filter = None
 
         if chemistry_key not in chemistry_cache:
-            try:
-                chemistry = []
-                for warhead in unique_warheads(smiles, frankenstein):
-                    descriptors = deprotonated_descriptors(
-                        smiles,
-                        warhead,
-                        frankenstein,
-                        reactivity_cache,
-                        nucleophile_cache,
-                        use_cache=not args.no_cache,
-                        residues=residue_filter,
+            if args.no_warhead:
+                molecule = Chem.MolFromSmiles(smiles)
+                if molecule is None:
+                    chemistry_cache[chemistry_key] = None
+                    chemistry_failures[chemistry_key] = (
+                        "invalid_smiles",
+                        f"Invalid ligand SMILES: {smiles}",
                     )
-                    chemistry.append((warhead, descriptors))
-                chemistry_cache[chemistry_key] = chemistry
-                frankenstein.save_reactivity_cache(reactivity_cache)
-                frankenstein.save_nucleophile_cache(nucleophile_cache)
-            except ValueError as exc:
-                detail = str(exc)
-                reason = (
-                    "invalid_smiles"
-                    if "Invalid ligand SMILES" in detail
-                    else "warhead_detection_failed"
-                )
-                chemistry_cache[chemistry_key] = None
-                chemistry_failures[chemistry_key] = (reason, detail)
-            except Exception as exc:
-                detail = str(exc)
-                reason = "descriptor_calculation_failed"
-                chemistry_cache[chemistry_key] = None
-                chemistry_failures[chemistry_key] = (reason, detail)
-                frankenstein.save_reactivity_cache(reactivity_cache)
-                frankenstein.save_nucleophile_cache(nucleophile_cache)
+                else:
+                    chemistry_cache[chemistry_key] = [
+                        (
+                            placeholder_warhead(),
+                            empty_deprotonated_descriptors(residue_filter),
+                        )
+                    ]
+            else:
+                try:
+                    chemistry = []
+                    for warhead in unique_warheads(smiles, frankenstein):
+                        descriptors = deprotonated_descriptors(
+                            smiles,
+                            warhead,
+                            frankenstein,
+                            reactivity_cache,
+                            nucleophile_cache,
+                            use_cache=not args.no_cache,
+                            residues=residue_filter,
+                        )
+                        chemistry.append((warhead, descriptors))
+                    chemistry_cache[chemistry_key] = chemistry
+                    frankenstein.save_reactivity_cache(reactivity_cache)
+                    frankenstein.save_nucleophile_cache(nucleophile_cache)
+                except ValueError as exc:
+                    detail = str(exc)
+                    reason = (
+                        "invalid_smiles"
+                        if "Invalid ligand SMILES" in detail
+                        else "warhead_detection_failed"
+                    )
+                    chemistry_cache[chemistry_key] = None
+                    chemistry_failures[chemistry_key] = (reason, detail)
+                except Exception as exc:
+                    detail = str(exc)
+                    reason = "descriptor_calculation_failed"
+                    chemistry_cache[chemistry_key] = None
+                    chemistry_failures[chemistry_key] = (reason, detail)
+                    frankenstein.save_reactivity_cache(reactivity_cache)
+                    frankenstein.save_nucleophile_cache(nucleophile_cache)
 
         chemistry = chemistry_cache[chemistry_key]
         if chemistry is None:
@@ -1594,8 +1776,9 @@ def main() -> None:
                     }
                 )
 
-    frankenstein.save_reactivity_cache(reactivity_cache)
-    frankenstein.save_nucleophile_cache(nucleophile_cache)
+    if not args.no_warhead:
+        frankenstein.save_reactivity_cache(reactivity_cache)
+        frankenstein.save_nucleophile_cache(nucleophile_cache)
     if not candidate_frames:
         skipped_path = write_skipped_inputs_csv(output_dir, skipped_rows)
         if skipped_path is not None:
