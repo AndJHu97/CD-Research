@@ -28,7 +28,9 @@ Invalid SMILES, ligands with no detected warhead, and other hard per-row failure
 skipped; details are written to covsite_skipped_inputs.csv.
 
 Feature progress is checkpointed under <output-dir>/feature_cache/shards/ as
-unique per-Name/warhead CSVs. After enrichment finishes, uniquely named
+unique per-Name/warhead CSVs. Each finished library row prints a flushed
+ligand/s rate (one electrophile SMILES × site) to stdout. After enrichment
+finishes, uniquely named
 covsite_candidates_<runid>.csv / covsite_labels_<runid>.csv are written for
 Cov_Screen, previous final feature caches are deleted, and the shards are
 cleared.
@@ -57,6 +59,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import uuid
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -85,6 +88,60 @@ DESCRIPTOR_COLUMNS = (
 NO_WARHEAD_LABEL = "none"
 FINAL_CANDIDATES_GLOB = "covsite_candidates_*.csv"
 FINAL_LABELS_GLOB = "covsite_labels_*.csv"
+
+
+def format_duration(seconds: float) -> str:
+    if not np.isfinite(seconds) or seconds < 0:
+        return "?"
+    total = int(round(seconds))
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m {secs:02d}s"
+    if minutes:
+        return f"{minutes}m {secs:02d}s"
+    return f"{secs}s"
+
+
+class LigandRateMeter:
+    """Wall-clock rate for library rows (one electrophile SMILES × site)."""
+
+    def __init__(self, n_total: int) -> None:
+        self.n_total = int(n_total)
+        self.n_done = 0
+        self.t0 = time.monotonic()
+
+    def tick(self, smiles: str = "") -> None:
+        self.n_done += 1
+        elapsed = time.monotonic() - self.t0
+        rate = self.n_done / elapsed if elapsed > 0 else 0.0
+        remain = max(self.n_total - self.n_done, 0)
+        eta = remain / rate if rate > 0 else float("nan")
+        sec_each = (elapsed / self.n_done) if self.n_done else float("nan")
+        smi = clean_text(smiles)
+        if len(smi) > 48:
+            smi = smi[:45] + "..."
+        extra = f"  {smi}" if smi else ""
+        print(
+            f"[CovSite] {self.n_done}/{self.n_total} ligands  "
+            f"{rate:.4g} ligand/s  "
+            f"{sec_each:.2f} s/ligand  "
+            f"elapsed {format_duration(elapsed)}  "
+            f"ETA {format_duration(eta)}"
+            f"{extra}",
+            flush=True,
+        )
+
+    def summary(self) -> None:
+        elapsed = time.monotonic() - self.t0
+        rate = self.n_done / elapsed if elapsed > 0 else 0.0
+        sec_each = (elapsed / self.n_done) if self.n_done else float("nan")
+        print(
+            f"[CovSite] Finished {self.n_done}/{self.n_total} ligands in "
+            f"{format_duration(elapsed)}  "
+            f"({rate:.4g} ligand/s, {sec_each:.2f} s/ligand)",
+            flush=True,
+        )
 
 
 def log1p_signed(values: Any) -> np.ndarray:
@@ -1451,6 +1508,12 @@ def main() -> None:
             f"from {shard_dir}"
         )
 
+    ligand_rate = LigandRateMeter(len(work))
+    print(
+        f"[CovSite] Featurizing {len(work):,} ligand row(s) "
+        "(one electrophile SMILES at one site per row)",
+        flush=True,
+    )
     for _, input_row in work.iterrows():
         pdb_id = input_row["_pdb_id"]
         smiles = input_row["_smiles"]
@@ -1465,6 +1528,7 @@ def main() -> None:
                 f"[CovSite] WARNING: skipping row {input_row['_source_row']} "
                 f"({reason}): {detail}"
             )
+            ligand_rate.tick(smiles)
             continue
 
         if args.vs:
@@ -1495,6 +1559,7 @@ def main() -> None:
                         f"[CovSite] WARNING: skipping row "
                         f"{input_row['_source_row']} ({reason}): {detail}"
                     )
+                    ligand_rate.tick(smiles)
                     continue
 
             pdb_path, sasa_sites = pdb_sasa_cache[pdb_id]
@@ -1524,6 +1589,7 @@ def main() -> None:
                     f"[CovSite] WARNING: skipping row "
                     f"{input_row['_source_row']} ({reason}): {detail}"
                 )
+                ligand_rate.tick(smiles)
                 continue
             if args.skip_sasa_deprot:
                 sites = stub_site_sasa_deprot(sites)
@@ -1574,6 +1640,7 @@ def main() -> None:
                         f"[CovSite] WARNING: skipping row "
                         f"{input_row['_source_row']} ({reason}): {detail}"
                     )
+                    ligand_rate.tick(smiles)
                     continue
 
             pdb_path, sites = pdb_cache[pdb_id]
@@ -1671,6 +1738,7 @@ def main() -> None:
                 f"[CovSite] WARNING: skipping row {input_row['_source_row']} "
                 f"({reason}): {detail}"
             )
+            ligand_rate.tick(smiles)
             continue
         if not chemistry:
             reason = "no_warhead_detected"
@@ -1683,6 +1751,7 @@ def main() -> None:
                 f"[CovSite] WARNING: skipping row {input_row['_source_row']} "
                 f"({reason})"
             )
+            ligand_rate.tick(smiles)
             continue
 
         label_frankenstein_warhead = clean_text(
@@ -1775,7 +1844,9 @@ def main() -> None:
                         "LigID": input_row["_ligid"],
                     }
                 )
+        ligand_rate.tick(smiles)
 
+    ligand_rate.summary()
     if not args.no_warhead:
         frankenstein.save_reactivity_cache(reactivity_cache)
         frankenstein.save_nucleophile_cache(nucleophile_cache)

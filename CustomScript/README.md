@@ -141,17 +141,19 @@ Reuse an existing CovSite candidates table:
 ```bash
 python Training_CovSite_VS.py library.csv hits.csv \
   --candidates covsite_candidates.csv \
-  --features Geo_Fit Hydrophobic_Fit \
+  --features Hydrophobic_Fit Electro_Fit \
+  --keep-warhead "Acrylamide warhead" \
+  --collapse-active-protomers \
   --output-dir ./covsite_vs_ranker
 ```
 
 **Library CSV** (one ligand at one site per row): `pdb` / `pdb_id`, `smiles`, `residue`, `resnum`, `chain` (optional `name`, `warhead`).
 
-**Hits CSV** (one file): `pdb_id` plus `Electrophile_Hit` / `electrophile_hit` (RDKit canonical SMILES, matched with `pdb_id`). Optional `Name_Hit`, `warhead_type` (restricts `Warhead_Base`; comma-separated allowed). TOPSIS-style miss columns are also accepted.
+**Hits CSV** (one file): `pdb_id` plus `Electrophile_Hit` / `electrophile_hit` (RDKit canonical SMILES). Include `residue`, `resnum`, and `chain` to label a ligand as a hit **only at that site** (same PDB, two residues → two label groups, matching leave-one-site-out). Without those columns, a ligand listed for a `pdb_id` is a hit at every site of that PDB; `--pdb-hits` forces that behavior. Optional `Name_Hit`, `warhead_type` (restricts `Warhead_Base`; comma-separated allowed). TOPSIS-style miss columns are also accepted.
 
 `--features` are CovSite candidate headers. Columns that are constant inside every site group are dropped with a warning (site-level SASA / deprotonation never rank ligands). Univariate feature stats rank higher values as better. Sites with fewer than 2 candidates or 0 hits are skipped (EF undefined).
 
-`--best-warhead` keeps the highest `pred_score` warhead per SMILES × site. `--multiple-hits` counts each Name × Warhead × SMILES as its own hit for EF / LogAUC.
+`--keep-warhead NAME` keeps only that `Warhead_Base` for **every** ligand (hits and decoys) before training. Hits-CSV `warhead_type` still only restricts listed actives. `--collapse-active-protomers` is COValid SI eval: among hit charge/stereo variants that share a parent compound at a site, keep the highest `pred_score` protomer and keep all decoy protomers (training still uses every protomer). `--best-warhead` keeps the highest `pred_score` warhead per SMILES × site. `--multiple-hits` counts each Name × Warhead × SMILES as its own hit for EF / LogAUC. `--topsis-vs PATH` points at `TOPSIS_VS.py` (hit matching and EF/LogAUC helpers; default is `bo-runs/scoring-analysis/VS_eval/TOPSIS_VS.py`).
 
 Outputs (same metric set as TOPSIS_VS, using LGBM `pred_score`):
 
@@ -165,6 +167,39 @@ Outputs (same metric set as TOPSIS_VS, using LGBM `pred_score`):
 | `feature_statistics.csv` / `feature_enrichment_factors.csv` | Univariate feature ranks |
 | `matched_site_warhead_rows.csv` / `unmatched_hit_names.csv` | Audit |
 | `models/fold_*.pkl` | Per-fold rankers (`--no-save-models` to skip) |
+
+## Ligand screening classifier
+
+`Training_Cov_Classifier.py` also accepts CovSite VS candidates directly. In
+this mode, known ligands in an `all_hits`-style file are labeled 1 and all
+other candidate ligands at that site are labeled 0. The pointwise
+`LGBMClassifier` is trained with protein-cluster-aware splitting, and held-out
+probabilities are ranked within each site for EF and LogAUC evaluation.
+
+```bash
+python osc_runs/scoring-analysis/Training_Cov_Classifier.py \
+  --vs-candidates VS/covsite_candidates_combined.csv \
+  --vs-hits VS/all_hits.csv \
+  --features Hydrogen_DPAL_Fit Hydrogen_APDL_Fit Hydrophobic_Fit Electro_Fit \
+             D_L_Ligand LogP_Ligand H_Bond_Donor_Ligand_Count \
+             H_Bond_Acceptor_Ligand_Count Formal_Charge_Ligand \
+             TPSA_Ligand Flatness_Ligand \
+  --pdb_folder Existing_Structures \
+  --deep-cluster --seq_identity 0.5 \
+  --keep-warhead "Acrylamide warhead" \
+  --collapse-active-protomers \
+  --output_dir VS/covsite_vs_classifier
+```
+
+The cutoff is selected from training out-of-fold predictions by maximum F1
+(precision–recall balance) and then locked before held-out test evaluation;
+test labels are never used to choose it. `classifier_metrics.csv` reports
+AUROC, AUPRC, accuracy, precision, recall, F1, and MCC on both training OOF
+and held-out test predictions at that cutoff and at 0.5. Ranking outputs
+include EF@1/5/10%, LogAUC, adjusted LogAUC, BEDROC (`--bedroc-alpha`, default
+20), median search-space reduction, and Hit@K/Hit@top-% for both splits.
+Per-site and pooled rankings, probabilities, OOF predictions, the saved
+`lgbm_classifier.pkl`, and unmatched-hit auditing are also written.
 
 ## Outputs
 
