@@ -39,6 +39,10 @@ Screen-only mode (--screen-only) skips all feature calculation and enrichment.
 Provide an existing candidates CSV with --candidates and optionally --labels to
 run Cov_Screen directly.
 
+Feature-only mode (--features-only) enumerates every nucleophilic residue as
+usual but stops after the candidates / labels CSVs, skipping Cov_Screen. No
+--model is needed; Cov_Classifier.py uses it to build its own candidate pool.
+
 Virtual-screening mode (--VS) requires Residue/ResNum/Chain on every input row
 and calculates features only for that target site × ligand warhead pair
 (no whole-protein nucleophile enumeration). It writes the usual candidates /
@@ -218,6 +222,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--features-only",
+        dest="features_only",
+        action="store_true",
+        help=(
+            "Enumerate every nucleophilic residue as usual but stop after "
+            "writing the candidates/labels CSVs, skipping Cov_Screen "
+            "ranking. --model is not required. Use it when another script "
+            "(e.g. Cov_Classifier.py) scores the features itself."
+        ),
+    )
+    parser.add_argument(
         "--skip-sasa-deprot",
         action="store_true",
         help=(
@@ -307,6 +322,11 @@ def parse_args() -> argparse.Namespace:
         parser.error("--VS and --screen-only cannot be used together")
     if args.skip_sasa_deprot and not args.vs:
         parser.error("--skip-sasa-deprot requires --VS")
+    if args.features_only and args.screen_only:
+        parser.error(
+            "--features-only and --screen-only cannot be used together; "
+            "--screen-only exists to run Cov_Screen on existing features"
+        )
     if args.screen_only:
         if not args.candidates:
             parser.error("--screen-only requires --candidates")
@@ -331,8 +351,10 @@ def parse_args() -> argparse.Namespace:
             parser.error("input_csv is required unless --screen-only is set")
         if not args.pdb_dir:
             parser.error("--pdb-dir is required unless --screen-only is set")
-        if not args.model:
-            parser.error("--model is required unless --VS is set")
+        if not args.model and not args.features_only:
+            parser.error(
+                "--model is required unless --VS or --features-only is set"
+            )
         if args.candidates or args.labels:
             parser.error(
                 "--candidates/--labels are only valid with --screen-only"
@@ -1267,7 +1289,9 @@ def main() -> None:
     interaction_path = locate_file("add_interaction_info.py", roots)
     nterminal_path = locate_file("Adding_N_terminal.py", roots)
     cov_screen_path = (
-        None if args.vs else locate_file("Cov_Screen.py", roots)
+        None
+        if args.vs or args.features_only
+        else locate_file("Cov_Screen.py", roots)
     )
     deprot_script_path = None
     deprot_model_path = None
@@ -1935,12 +1959,14 @@ def main() -> None:
     print(f"[CovSite] Wrote feature cache {candidates_path.name}")
     print(f"[CovSite] Wrote labels cache  {labels_path.name}")
 
-    if args.vs:
-        print("\n[CovSite] Complete (VS feature-only)")
+    if args.vs or args.features_only:
+        mode = "VS feature-only" if args.vs else "feature-only"
+        skipped_by = "--VS" if args.vs else "--features-only"
+        print(f"\n[CovSite] Complete ({mode})")
         print(f"  Candidate features: {candidates_path}")
         print(f"  Labels:             {labels_path} ({len(labels)} labeled site(s))")
         print(f"  Latest aliases:     {output_dir / 'covsite_candidates.csv'}")
-        print("  Ranking:            skipped (--VS)")
+        print(f"  Ranking:            skipped ({skipped_by})")
     else:
         launch_cov_screen(
             args,

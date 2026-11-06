@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 710.12 457">
+  <!-- Generator: Adobe Illustrator 29.5.1, SVG Export Plug-In . SVG Version: 2.1.0 Build 141)  -->
+  <defs>
+    <style>
+      .st0, .st1, .st2 {
+        stroke: #231f20;
+      }
+
+      .st0, .st2 {
+        fill: #231f20;
+      }
+
+      .st3, .st4, .st1, .st2 {
+        stroke-width: 2px;
+      }
+
+      .st3, .st4, .st5 {
+        stroke: #000;
+      }
+
+      .st3, .st6, .st7, .st8, .st1 {
+        fill: none;
+      }
+
+      .st3, .st7, .st8, .st9 {
+        stroke-linecap: square;
+      }
+
+      .st10 {
+        fill: #fff;
+      }
+
+      .st4, .st7, .st8, .st1, .st5, .st2, .st11, .st9 {
+        stroke-linejoin: round;
+      }
+
+      .st7 {
+        stroke: #e5e5e5;
+        stroke-width: .8px;
+      }
+
+      .st8, .st11, .st9 {
+        stroke: #cc5800;
+      }
+
+      .st8, .st9 {
+        stroke-width: 3px;
+      }
+
+      .st1, .st2 {
+        stroke-dasharray: 7.4 3.2;
+      }
+
+      .st5 {
+        stroke-width: .6px;
+      }
+
+      .st11, .st9 {
+        fill: #cc5800;
+      }
+
+      .st12 {
+        clip-path: url(#clippath);
+      }
+    </style>
+    <clipPath id="clippath">
+      <rect class="st6" x="53.86" y="24.12" width="613.8" height="388.08"/>
+    </clipPath>
+  </defs>
+  <g id="patch_1">
+    <path class="st10" d="M0,457h710.12V0H0v457Z"/>
+  </g>
+  <g id="line2d_1">
+    <g class="st12">
+      <path class="st7" d="M53.86,412.2V24.12"/>
+    </g>
+  </g>
+  <g id="line2d_2">
+    <path id="mf0b109a12b" class="st4" d="M53.86,412.2v6"/>
+  </g>
+  <g id="line2d_4">
+    <path id="mf0b109a12b1" data-name="mf0b109a12b" class="st4" d="M258.46,412.2v6"/>
+  </g>
+  <g id="line2d_6">
+    <path id="mf0b109a12b2" data-name="mf0b109a12b" class="st4" d="M463.06,412.2v6"/>
+  </g>
+  <g id="line2d_8">
+    <path id="mf0b109a12b3" data-name="mf0b109a12b" class="st4" d="M667.66,412.2v6"/>
+  </g>
+  <g id="xtick_5">
+    <g id="line2d_9">
+      <path id="mac46bc5c5e" class="st5" d="M606.07,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_6">
+    <g id="line2d_10">
+      <path id="mac46bc5c5e1" data-name="mac46bc5c5e" class="st5" d="M570.04,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_7">
+    <g id="line2d_11">
+      <path id="mac46bc5c5e2" data-name="mac46bc5c5e" class="st5" d="M544.48,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_8">
+    <g id="line2d_12">
+      <path id="mac46bc5c5e3" data-name="mac46bc5c5e" class="st5" d="M524.65,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_9">
+    <g id="line2d_13">
+      <path id="mac46bc5c5e4" data-name="mac46bc5c5e" class="st5" d="M508.45,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_10">
+    <g id="line2d_14">
+      <path id="mac46bc5c5e5" data-name="mac46bc5c5e" class="st5" d="M494.75,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_11">
+    <g id="line2d_15">
+      <path id="mac46bc5c5e6" data-name="mac46bc5c5e" class="st5" d="M482.89,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_12">
+    <g id="line2d_16">
+      <path id="mac46bc5c5e7" data-name="mac46bc5c5e" class="st5" d="M472.42,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_13">
+    <g id="line2d_17">
+      <path id="mac46bc5c5e8" data-name="mac46bc5c5e" class="st5" d="M401.47,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_14">
+    <g id="line2d_18">
+      <path id="mac46bc5c5e9" data-name="mac46bc5c5e" class="st5" d="M365.44,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_15">
+    <g id="line2d_19">
+      <path id="mac46bc5c5e10" data-name="mac46bc5c5e" class="st5" d="M339.88,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_16">
+    <g id="line2d_20">
+      <path id="mac46bc5c5e11" data-name="mac46bc5c5e" class="st5" d="M320.05,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_17">
+    <g id="line2d_21">
+      <path id="mac46bc5c5e12" data-name="mac46bc5c5e" class="st5" d="M303.85,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_18">
+    <g id="line2d_22">
+      <path id="mac46bc5c5e13" data-name="mac46bc5c5e" class="st5" d="M290.15,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_19">
+    <g id="line2d_23">
+      <path id="mac46bc5c5e14" data-name="mac46bc5c5e" class="st5" d="M278.29,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_20">
+    <g id="line2d_24">
+      <path id="mac46bc5c5e15" data-name="mac46bc5c5e" class="st5" d="M267.82,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_21">
+    <g id="line2d_25">
+      <path id="mac46bc5c5e16" data-name="mac46bc5c5e" class="st5" d="M196.87,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_22">
+    <g id="line2d_26">
+      <path id="mac46bc5c5e17" data-name="mac46bc5c5e" class="st5" d="M160.84,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_23">
+    <g id="line2d_27">
+      <path id="mac46bc5c5e18" data-name="mac46bc5c5e" class="st5" d="M135.28,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_24">
+    <g id="line2d_28">
+      <path id="mac46bc5c5e19" data-name="mac46bc5c5e" class="st5" d="M115.45,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_25">
+    <g id="line2d_29">
+      <path id="mac46bc5c5e20" data-name="mac46bc5c5e" class="st5" d="M99.25,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_26">
+    <g id="line2d_30">
+      <path id="mac46bc5c5e21" data-name="mac46bc5c5e" class="st5" d="M85.55,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_27">
+    <g id="line2d_31">
+      <path id="mac46bc5c5e22" data-name="mac46bc5c5e" class="st5" d="M73.69,412.2v2"/>
+    </g>
+  </g>
+  <g id="xtick_28">
+    <g id="line2d_32">
+      <path id="mac46bc5c5e23" data-name="mac46bc5c5e" class="st5" d="M63.22,412.2v2"/>
+    </g>
+  </g>
+  <g id="line2d_34">
+    <path id="m818e548331" class="st4" d="M53.86,402.33h-6"/>
+  </g>
+  <g id="line2d_36">
+    <path id="m818e5483311" data-name="m818e548331" class="st4" d="M53.86,336.56h-6"/>
+  </g>
+  <g id="line2d_38">
+    <path id="m818e5483312" data-name="m818e548331" class="st4" d="M53.86,270.78h-6"/>
+  </g>
+  <g id="line2d_40">
+    <path id="m818e5483313" data-name="m818e548331" class="st4" d="M53.86,205h-6"/>
+  </g>
+  <g id="line2d_42">
+    <path id="m818e5483314" data-name="m818e548331" class="st4" d="M53.86,139.23h-6"/>
+  </g>
+  <g id="line2d_44">
+    <path id="m818e5483315" data-name="m818e548331" class="st4" d="M53.86,73.45h-6"/>
+  </g>
+  <g id="line2d_45">
+    <path class="st1" d="M53.86,73.45l4.53,16.36,4.78,16.36,4.53,14.73,4.78,14.73,4.47,13.09,4.71,13.09,4.34,11.45,4.56,11.45,4.8,11.45,4.33,9.82,4.56,9.82,4.8,9.82,5.08,9.82,4.47,8.18,4.7,8.18,4.96,8.18,5.26,8.18,4.44,6.54,4.68,6.54,4.94,6.54,5.23,6.54,5.55,6.54,5.92,6.54,4.72,4.91,4.98,4.91,5.28,4.91,5.61,4.91,5.99,4.91,6.42,4.91,6.93,4.91,4.94,3.27,5.23,3.27,5.55,3.27,5.92,3.27,6.35,3.27,6.84,3.27,7.41,3.27,8.08,3.27,8.89,3.27,9.88,3.27,11.11,3.27,6.13,1.64,6.58,1.64,7.11,1.64,7.72,1.64,8.46,1.64,9.35,1.64,10.45,1.64,11.85,1.64,13.68,1.64,16.17,1.64,19.78,1.64,25.49,1.64,46.28,2,24.27.7,31.21.66,34.68.51,45.08.42,58.95.31h0"/>
+  </g>
+  <g id="patch_3">
+    <path class="st3" d="M53.86,412.2V24.12"/>
+  </g>
+  <g id="patch_4">
+    <path class="st3" d="M53.86,412.2h613.8"/>
+  </g>
+  <g id="line2d_46">
+    <path class="st8" d="M53.86,73.45l.44,1.33.45,1.78.45,2.66.45,1.33h.45l.45.89h13.24l.53.44h1.07l.54.89h75.64l1.28.44h10.95l1.47.44h123.14l6.13.89h39.22l10.45.89h11.85l13.68,1.78,16.17.89,19.78,1.33,25.49.44,35.88,10.21h3.47l3.47.44,3.47,1.33,3.47,2.22h3.47l3.47.44h3.47l3.47,3.11,3.47.89h3.47l3.47,2.22,3.47,5.33,3.47,9.32,3.47,1.33,3.47,1.78,3.47,2.66,3.47,2.22,2.64.44.83.44h3.47l6.94.89h3.47l3.47.44,3.47.89h3.47l3.47.89,3.47.44h10.4l3.47,1.78,3.47,2.22,3.47,1.78h3.47l6.94,1.78h3.47l3.47,8.88h10.4l3.47.89h3.47l3.47.89,3.47,3.99,3.47,9.32h24.27l3.47.44h3.47l3.47,17.31h10.4"/>
+  </g>
+  <g id="line2d_47">
+    <g>
+      <path id="mb0e678a111" class="st0" d="M51.36,75.95h5v-5h-5v5Z"/>
+      <path id="mb0e678a1111" data-name="mb0e678a111" class="st0" d="M76.92,158.17h5v-5h-5v5Z"/>
+      <path id="mb0e678a1112" data-name="mb0e678a111" class="st0" d="M112.95,240.39h5v-5h-5v5Z"/>
+      <path id="mb0e678a1113" data-name="mb0e678a111" class="st0" d="M174.54,322.61h5v-5h-5v5Z"/>
+      <path id="mb0e678a1114" data-name="mb0e678a111" class="st0" d="M460.56,401.54h5v-5h-5v5Z"/>
+      <path id="mb0e678a1115" data-name="mb0e678a111" class="st0" d="M522.15,403.19h5v-5h-5v5Z"/>
+      <path id="mb0e678a1116" data-name="mb0e678a111" class="st0" d="M665.16,404.5h5v-5h-5v5Z"/>
+    </g>
+  </g>
+  <g>
+    <path id="m842b2245e4" class="st11" d="M53.86,77.45c1.06,0,2.08-.42,2.83-1.17s1.17-1.77,1.17-2.83-.42-2.08-1.17-2.83-1.77-1.17-2.83-1.17-2.08.42-2.83,1.17-1.17,1.77-1.17,2.83.42,2.08,1.17,2.83,1.77,1.17,2.83,1.17Z"/>
+    <path id="m842b2245e41" data-name="m842b2245e4" class="st11" d="M79.42,86.77c1.06,0,2.08-.42,2.83-1.17s1.17-1.77,1.17-2.83-.42-2.08-1.17-2.83-1.77-1.17-2.83-1.17-2.08.42-2.83,1.17-1.17,1.77-1.17,2.83.42,2.08,1.17,2.83,1.77,1.17,2.83,1.17Z"/>
+    <path id="m842b2245e42" data-name="m842b2245e4" class="st11" d="M115.45,86.77c1.06,0,2.08-.42,2.83-1.17s1.17-1.77,1.17-2.83-.42-2.08-1.17-2.83-1.77-1.17-2.83-1.17-2.08.42-2.83,1.17-1.17,1.77-1.17,2.83.42,2.08,1.17,2.83,1.77,1.17,2.83,1.17Z"/>
+    <path id="m842b2245e43" data-name="m842b2245e4" class="st11" d="M177.04,87.66c1.06,0,2.08-.42,2.83-1.17s1.17-1.77,1.17-2.83-.42-2.08-1.17-2.83-1.77-1.17-2.83-1.17-2.08.42-2.83,1.17-1.17,1.77-1.17,2.83.42,2.08,1.17,2.83,1.77,1.17,2.83,1.17Z"/>
+    <path id="m842b2245e44" data-name="m842b2245e4" class="st11" d="M463.06,104.08c1.06,0,2.08-.42,2.83-1.17s1.17-1.77,1.17-2.83-.42-2.08-1.17-2.83-1.77-1.17-2.83-1.17-2.08.42-2.83,1.17-1.17,1.77-1.17,2.83.42,2.08,1.17,2.83,1.77,1.17,2.83,1.17Z"/>
+    <path id="m842b2245e45" data-name="m842b2245e4" class="st11" d="M524.65,137.81c1.06,0,2.08-.42,2.83-1.17s1.17-1.77,1.17-2.83-.42-2.08-1.17-2.83-1.77-1.17-2.83-1.17-2.08.42-2.83,1.17-1.17,1.77-1.17,2.83.42,2.08,1.17,2.83,1.77,1.17,2.83,1.17Z"/>
+    <path id="m842b2245e46" data-name="m842b2245e4" class="st11" d="M667.66,191.07c1.06,0,2.08-.42,2.83-1.17s1.17-1.77,1.17-2.83-.42-2.08-1.17-2.83-1.77-1.17-2.83-1.17-2.08.42-2.83,1.17-1.17,1.77-1.17,2.83.42,2.08,1.17,2.83,1.77,1.17,2.83,1.17Z"/>
+  </g>
+  <g id="line2d_49">
+    <path class="st9" d="M551.77,361.45h20"/>
+    <path id="m842b2245e47" data-name="m842b2245e4" class="st11" d="M561.77,365.45c1.06,0,2.08-.42,2.83-1.17s1.17-1.77,1.17-2.83-.42-2.08-1.17-2.83-1.77-1.17-2.83-1.17-2.08.42-2.83,1.17-1.17,1.77-1.17,2.83.42,2.08,1.17,2.83,1.77,1.17,2.83,1.17Z"/>
+  </g>
+  <path class="st2" d="M552.77,375.58h17.72"/>
+  <path id="mb0e678a1117" data-name="mb0e678a111" class="st0" d="M559.27,378.08h5v-5h-5v5Z"/>
+</svg>

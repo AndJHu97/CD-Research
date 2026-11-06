@@ -1,0 +1,1244 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 841.94 587.59">
+  <!-- Generator: Adobe Illustrator 29.5.1, SVG Export Plug-In . SVG Version: 2.1.0 Build 141)  -->
+  <defs>
+    <style>
+      .st0 {
+        clip-path: url(#clippath-51);
+      }
+
+      .st1 {
+        clip-path: url(#clippath-34);
+      }
+
+      .st2 {
+        clip-path: url(#clippath-38);
+      }
+
+      .st3 {
+        clip-path: url(#clippath-21);
+      }
+
+      .st4 {
+        clip-path: url(#clippath-6);
+      }
+
+      .st5 {
+        clip-path: url(#clippath-7);
+      }
+
+      .st6 {
+        clip-path: url(#clippath-17);
+      }
+
+      .st7 {
+        clip-path: url(#clippath-31);
+      }
+
+      .st8, .st9 {
+        font-size: 9px;
+      }
+
+      .st8, .st9, .st10, .st11, .st12, .st13, .st14, .st15, .st16, .st17, .st18, .st19 {
+        isolation: isolate;
+        opacity: 0;
+      }
+
+      .st8, .st12, .st16, .st19 {
+        font-family: Verdana-Bold, Verdana;
+        font-weight: 700;
+      }
+
+      .st20 {
+        clip-path: url(#clippath-15);
+      }
+
+      .st21 {
+        clip-path: url(#clippath-33);
+      }
+
+      .st22 {
+        clip-path: url(#clippath-18);
+      }
+
+      .st23 {
+        clip-path: url(#clippath-47);
+      }
+
+      .st24 {
+        clip-path: url(#clippath-4);
+      }
+
+      .st25 {
+        stroke-linecap: square;
+      }
+
+      .st25, .st26, .st27 {
+        stroke: #000;
+      }
+
+      .st25, .st27, .st28, .st29, .st30, .st31 {
+        stroke-width: 2px;
+      }
+
+      .st25, .st32, .st30, .st31 {
+        fill: none;
+      }
+
+      .st33 {
+        clip-path: url(#clippath-22);
+      }
+
+      .st34 {
+        clip-path: url(#clippath-23);
+      }
+
+      .st26 {
+        stroke-width: .25px;
+      }
+
+      .st26, .st35, .st27, .st36, .st37, .st28, .st38, .st29, .st30, .st39, .st40, .st31, .st41 {
+        stroke-linejoin: round;
+      }
+
+      .st35, .st42, .st16 {
+        fill: #2c7a4b;
+      }
+
+      .st35, .st41 {
+        stroke: #fff;
+        stroke-width: .6px;
+      }
+
+      .st43 {
+        clip-path: url(#clippath-9);
+      }
+
+      .st10 {
+        font-size: 8px;
+      }
+
+      .st10, .st11, .st13, .st14, .st15, .st17, .st44 {
+        font-family: LucidaBright, 'Lucida Bright';
+      }
+
+      .st45 {
+        clip-path: url(#clippath-10);
+      }
+
+      .st46 {
+        clip-path: url(#clippath-42);
+      }
+
+      .st47 {
+        clip-path: url(#clippath-43);
+      }
+
+      .st48 {
+        clip-path: url(#clippath-25);
+      }
+
+      .st49 {
+        clip-path: url(#clippath-27);
+      }
+
+      .st36 {
+        stroke: #8172b3;
+      }
+
+      .st36, .st37, .st38, .st40 {
+        stroke-width: 5px;
+      }
+
+      .st36, .st17 {
+        fill: #8172b3;
+      }
+
+      .st50 {
+        clip-path: url(#clippath-11);
+      }
+
+      .st37 {
+        stroke: #2a78d6;
+      }
+
+      .st37, .st14 {
+        fill: #2a78d6;
+      }
+
+      .st51 {
+        clip-path: url(#clippath-36);
+      }
+
+      .st28, .st29, .st39 {
+        fill: #1f77b4;
+      }
+
+      .st28, .st39, .st31 {
+        stroke: #73726c;
+      }
+
+      .st38 {
+        fill: #dd8452;
+        stroke: #dd8452;
+      }
+
+      .st52 {
+        clip-path: url(#clippath-35);
+      }
+
+      .st53 {
+        clip-path: url(#clippath-48);
+      }
+
+      .st54 {
+        clip-path: url(#clippath-28);
+      }
+
+      .st29, .st30 {
+        stroke: #2c7a4b;
+      }
+
+      .st11, .st14, .st15, .st17 {
+        font-size: 8.5px;
+      }
+
+      .st55 {
+        clip-path: url(#clippath-1);
+      }
+
+      .st12, .st16, .st19 {
+        font-size: 12px;
+      }
+
+      .st13, .st18 {
+        font-size: 10px;
+      }
+
+      .st56 {
+        clip-path: url(#clippath-45);
+      }
+
+      .st57 {
+        clip-path: url(#clippath-46);
+      }
+
+      .st58 {
+        clip-path: url(#clippath-40);
+      }
+
+      .st59 {
+        clip-path: url(#clippath-5);
+      }
+
+      .st60 {
+        clip-path: url(#clippath-20);
+      }
+
+      .st61 {
+        clip-path: url(#clippath-8);
+      }
+
+      .st39 {
+        stroke-width: 1.2px;
+      }
+
+      .st40 {
+        stroke: #e34948;
+      }
+
+      .st40, .st15 {
+        fill: #e34948;
+      }
+
+      .st62 {
+        clip-path: url(#clippath-52);
+      }
+
+      .st63 {
+        clip-path: url(#clippath-41);
+      }
+
+      .st64 {
+        clip-path: url(#clippath-3);
+      }
+
+      .st65 {
+        clip-path: url(#clippath-26);
+      }
+
+      .st66 {
+        clip-path: url(#clippath-12);
+      }
+
+      .st67 {
+        clip-path: url(#clippath-50);
+      }
+
+      .st68 {
+        clip-path: url(#clippath-14);
+      }
+
+      .st69 {
+        clip-path: url(#clippath-30);
+      }
+
+      .st70 {
+        clip-path: url(#clippath-19);
+      }
+
+      .st71 {
+        clip-path: url(#clippath-32);
+      }
+
+      .st72 {
+        font-family: MyriadPro-Regular, 'Myriad Pro';
+      }
+
+      .st73 {
+        clip-path: url(#clippath-53);
+      }
+
+      .st74 {
+        clip-path: url(#clippath-39);
+      }
+
+      .st75 {
+        clip-path: url(#clippath-16);
+      }
+
+      .st76 {
+        clip-path: url(#clippath-2);
+      }
+
+      .st77 {
+        clip-path: url(#clippath-29);
+      }
+
+      .st41, .st19 {
+        fill: #73726c;
+      }
+
+      .st78 {
+        clip-path: url(#clippath-49);
+      }
+
+      .st79 {
+        clip-path: url(#clippath-37);
+      }
+
+      .st80 {
+        clip-path: url(#clippath-13);
+      }
+
+      .st81 {
+        clip-path: url(#clippath-24);
+      }
+
+      .st82 {
+        clip-path: url(#clippath);
+      }
+
+      .st83 {
+        clip-path: url(#clippath-44);
+      }
+    </style>
+    <clipPath id="clippath">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-1">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-2">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-3">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-4">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-5">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-6">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-7">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-8">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-9">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-10">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-11">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-12">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-13">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-14">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-15">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-16">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-17">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-18">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-19">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-20">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-21">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-22">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-23">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-24">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-25">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-26">
+      <rect class="st32" x="542.13" y="24.32" width="292.61" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-27">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-28">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-29">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-30">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-31">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-32">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-33">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-34">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-35">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-36">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-37">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-38">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-39">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-40">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-41">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-42">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-43">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-44">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-45">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-46">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-47">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-48">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-49">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-50">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-51">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-52">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+    <clipPath id="clippath-53">
+      <rect class="st32" x="137.24" y="326.88" width="254.45" height="224.12"/>
+    </clipPath>
+  </defs>
+  <g id="line2d_3">
+    <path id="m6b6818ea39" class="st27" d="M148.5,248.44v3.5"/>
+  </g>
+  <g id="text_1">
+    <text class="st13" transform="translate(145.46 263.04)"><tspan x="0" y="0">0</tspan></text>
+  </g>
+  <g id="line2d_5">
+    <path id="m6b6818ea391" data-name="m6b6818ea39" class="st27" d="M204.79,248.44v3.5"/>
+  </g>
+  <g id="text_2">
+    <text class="st13" transform="translate(198.71 263.04)"><tspan x="0" y="0">25</tspan></text>
+  </g>
+  <g id="line2d_7">
+    <path id="m6b6818ea392" data-name="m6b6818ea39" class="st27" d="M261.08,248.44v3.5"/>
+  </g>
+  <g id="text_3">
+    <text class="st13" transform="translate(255 263.04)"><tspan x="0" y="0">50</tspan></text>
+  </g>
+  <g id="line2d_9">
+    <path id="m6b6818ea393" data-name="m6b6818ea39" class="st27" d="M317.38,248.44v3.5"/>
+  </g>
+  <g id="text_4">
+    <text class="st13" transform="translate(311.29 263.04)"><tspan x="0" y="0">75</tspan></text>
+  </g>
+  <g id="line2d_11">
+    <path id="m6b6818ea394" data-name="m6b6818ea39" class="st27" d="M373.67,248.44v3.5"/>
+  </g>
+  <g id="text_5">
+    <text class="st13" transform="translate(364.54 263.04)"><tspan x="0" y="0">100</tspan></text>
+  </g>
+  <g id="text_6">
+    <text class="st13" transform="translate(181.41 276.71)"><tspan x="0" y="0">Median search space reduction (%)</tspan></text>
+  </g>
+  <g id="line2d_13">
+    <path id="m4ad942e52c" class="st27" d="M137.24,234.43h-3.5"/>
+  </g>
+  <g id="text_7">
+    <text class="st13" transform="translate(118.07 238.23)"><tspan x="0" y="0">30</tspan></text>
+  </g>
+  <g id="line2d_15">
+    <path id="m4ad942e52c1" data-name="m4ad942e52c" class="st27" d="M137.24,206.41h-3.5"/>
+  </g>
+  <g id="text_8">
+    <text class="st13" transform="translate(118.07 210.21)"><tspan x="0" y="0">40</tspan></text>
+  </g>
+  <g id="line2d_17">
+    <path id="m4ad942e52c2" data-name="m4ad942e52c" class="st27" d="M137.24,178.4h-3.5"/>
+  </g>
+  <g id="text_9">
+    <text class="st13" transform="translate(118.07 182.2)"><tspan x="0" y="0">50</tspan></text>
+  </g>
+  <g id="line2d_19">
+    <path id="m4ad942e52c3" data-name="m4ad942e52c" class="st27" d="M137.24,150.39h-3.5"/>
+  </g>
+  <g id="text_10">
+    <text class="st13" transform="translate(118.07 154.18)"><tspan x="0" y="0">60</tspan></text>
+  </g>
+  <g id="line2d_21">
+    <path id="m4ad942e52c4" data-name="m4ad942e52c" class="st27" d="M137.24,122.37h-3.5"/>
+  </g>
+  <g id="text_11">
+    <text class="st13" transform="translate(118.07 126.17)"><tspan x="0" y="0">70</tspan></text>
+  </g>
+  <g id="line2d_23">
+    <path id="m4ad942e52c5" data-name="m4ad942e52c" class="st27" d="M137.24,94.36h-3.5"/>
+  </g>
+  <g id="text_12">
+    <text class="st13" transform="translate(118.07 98.15)"><tspan x="0" y="0">80</tspan></text>
+  </g>
+  <g id="line2d_25">
+    <path id="m4ad942e52c6" data-name="m4ad942e52c" class="st27" d="M137.24,66.34h-3.5"/>
+  </g>
+  <g id="text_13">
+    <text class="st13" transform="translate(118.07 70.14)"><tspan x="0" y="0">90</tspan></text>
+  </g>
+  <g id="line2d_27">
+    <path id="m4ad942e52c7" data-name="m4ad942e52c" class="st27" d="M137.24,38.33h-3.5"/>
+  </g>
+  <g id="text_14">
+    <text class="st13" transform="translate(111.99 42.12)"><tspan x="0" y="0">100</tspan></text>
+  </g>
+  <g id="text_15">
+    <text class="st13" transform="translate(105.07 162.83) rotate(-90)"><tspan x="0" y="0">Hit rate (%)</tspan></text>
+  </g>
+  <g id="patch_3">
+    <path class="st25" d="M137.24,248.44V24.32"/>
+  </g>
+  <g id="patch_4">
+    <path class="st25" d="M137.24,248.44h254.45"/>
+  </g>
+  <g id="PathCollection_1">
+    <path id="md30219d81a" class="st37" d="M372.56,87.06l6.71-6.71-6.71-6.71-6.71,6.71,6.71,6.71Z"/>
+  </g>
+  <g id="text_16">
+    <text class="st14" transform="translate(305.11 93.9)"><tspan x="0" y="0">CovSite top 1%</tspan></text>
+  </g>
+  <g id="PathCollection_2">
+    <path id="m29bc055e80" class="st37" d="M370.89,65.74h3.33v-3.33h3.33v-3.33h-3.33v-3.33h-3.33v3.33h-3.33v3.33h3.33v3.33Z"/>
+  </g>
+  <g id="text_17">
+    <text class="st14" transform="translate(305.11 51.88)"><tspan x="0" y="0">CovSite top 3%</tspan></text>
+  </g>
+  <g id="PathCollection_3">
+    <path id="mdc662c0f59" class="st40" d="M364.06,204.18c1.26,0,2.46-.5,3.35-1.39.89-.89,1.39-2.1,1.39-3.35s-.5-2.46-1.39-3.35c-.89-.89-2.1-1.39-3.35-1.39s-2.46.5-3.35,1.39c-.89.89-1.39,2.1-1.39,3.35s.5,2.46,1.39,3.35c.89.89,2.1,1.39,3.35,1.39Z"/>
+  </g>
+  <g id="text_18">
+    <text class="st15" transform="translate(301.62 212.99)"><tspan x="0" y="0">fpocket top-1</tspan></text>
+  </g>
+  <g id="PathCollection_4">
+    <path id="m848d69af25" class="st38" d="M352.97,128.64h9.49v-9.49h-9.49v9.49Z"/>
+  </g>
+  <g id="PathCollection_5">
+    <path id="mf0545477d2" class="st36" d="M222.93,46.71l-5,10h10l-5-10Z"/>
+  </g>
+  <g id="text_20">
+    <text class="st17" transform="translate(229.68 65.26)"><tspan x="0" y="0">fpocket all</tspan></text>
+  </g>
+  <g id="text_21">
+    <text class="st12" transform="translate(137.24 16.32)"><tspan x="0" y="0">A</tspan></text>
+  </g>
+  <g id="line2d_31">
+    <path id="m6b6818ea395" data-name="m6b6818ea39" class="st27" d="M593.36,248.44v3.5"/>
+  </g>
+  <g id="text_23">
+    <text class="st18" transform="translate(583.45 263.04)"><tspan class="st72" x="0" y="0">−</tspan><tspan class="st44" x="5.96" y="0">0.2</tspan></text>
+  </g>
+  <g id="line2d_33">
+    <path id="m6b6818ea396" data-name="m6b6818ea39" class="st27" d="M644.6,248.44v3.5"/>
+  </g>
+  <g id="text_24">
+    <text class="st13" transform="translate(637.19 263.04)"><tspan x="0" y="0">0.0</tspan></text>
+  </g>
+  <g id="line2d_35">
+    <path id="m6b6818ea397" data-name="m6b6818ea39" class="st27" d="M695.84,248.44v3.5"/>
+  </g>
+  <g id="text_25">
+    <text class="st13" transform="translate(688.43 263.04)"><tspan x="0" y="0">0.2</tspan></text>
+  </g>
+  <g id="line2d_37">
+    <path id="m6b6818ea398" data-name="m6b6818ea39" class="st27" d="M747.07,248.44v3.5"/>
+  </g>
+  <g id="text_26">
+    <text class="st13" transform="translate(739.67 263.04)"><tspan x="0" y="0">0.4</tspan></text>
+  </g>
+  <g id="line2d_39">
+    <path id="m6b6818ea399" data-name="m6b6818ea39" class="st27" d="M798.31,248.44v3.5"/>
+  </g>
+  <g id="text_27">
+    <text class="st13" transform="translate(790.9 263.04)"><tspan x="0" y="0">0.6</tspan></text>
+  </g>
+  <g id="text_28">
+    <text class="st9" transform="translate(610.51 275.95)"><tspan class="st44" x="0" y="0">Cohen&apos;s d (all top-1 </tspan><tspan class="st72" x="87.76" y="0">−</tspan><tspan class="st44" x="93.12" y="0" xml:space="preserve"> target pocket)</tspan></text>
+  </g>
+  <g id="matplotlib.axis_4">
+    <g id="ytick_9">
+      <g id="line2d_40">
+        <path id="m4ad942e52c8" data-name="m4ad942e52c" class="st26" d="M542.13,33.9h-3.5"/>
+      </g>
+      <g id="text_29">
+        <text class="st8" transform="translate(350.63 37.32)"><tspan x="0" y="0">Geometry / druggability</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_10">
+      <g id="line2d_41">
+        <path id="m4ad942e52c9" data-name="m4ad942e52c" class="st26" d="M542.13,53.05h-3.5"/>
+      </g>
+      <g id="text_30">
+        <text class="st11" transform="translate(451.4 56.28)"><tspan x="0" y="0">fpocket score</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_11">
+      <g id="line2d_42">
+        <path id="m4ad942e52c10" data-name="m4ad942e52c" class="st26" d="M542.13,72.21h-3.5"/>
+      </g>
+      <g id="text_31">
+        <text class="st11" transform="translate(421.7 75.44)"><tspan x="0" y="0">Druggability score</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_12">
+      <g id="line2d_43">
+        <path id="m4ad942e52c11" data-name="m4ad942e52c" class="st26" d="M542.13,91.36h-3.5"/>
+      </g>
+      <g id="text_32">
+        <text class="st11" transform="translate(435.22 94.59)"><tspan x="0" y="0">N alpha-spheres</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_13">
+      <g id="line2d_44">
+        <path id="m4ad942e52c12" data-name="m4ad942e52c" class="st26" d="M542.13,110.52h-3.5"/>
+      </g>
+      <g id="text_33">
+        <text class="st11" transform="translate(487.66 113.75)"><tspan x="0" y="0">Volume</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_14">
+      <g id="line2d_45">
+        <path id="m4ad942e52c13" data-name="m4ad942e52c" class="st26" d="M542.13,129.67h-3.5"/>
+      </g>
+      <g id="text_34">
+        <text class="st11" transform="translate(466.41 132.9)"><tspan x="0" y="0">Total SASA</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_15">
+      <g id="line2d_46">
+        <path id="m4ad942e52c14" data-name="m4ad942e52c" class="st26" d="M542.13,160.32h-3.5"/>
+      </g>
+      <g id="text_35">
+        <text class="st8" transform="translate(347.21 163.74)"><tspan x="0" y="0">Chemistry / composition</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_16">
+      <g id="line2d_47">
+        <path id="m4ad942e52c15" data-name="m4ad942e52c" class="st26" d="M542.13,179.48h-3.5"/>
+      </g>
+      <g id="text_36">
+        <text class="st11" transform="translate(401.89 182.71)"><tspan x="0" y="0">Hydrophobicity score</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_17">
+      <g id="line2d_48">
+        <path id="m4ad942e52c16" data-name="m4ad942e52c" class="st26" d="M542.13,198.63h-3.5"/>
+      </g>
+      <g id="text_37">
+        <text class="st11" transform="translate(454.8 201.86)"><tspan x="0" y="0">Charge score</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_18">
+      <g id="line2d_49">
+        <path id="m4ad942e52c17" data-name="m4ad942e52c" class="st26" d="M542.13,217.79h-3.5"/>
+      </g>
+      <g id="text_38">
+        <text class="st11" transform="translate(474.72 221.02)"><tspan x="0" y="0">Flexibility</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_19">
+      <g id="line2d_50">
+        <path id="m4ad942e52c18" data-name="m4ad942e52c" class="st26" d="M542.13,236.94h-3.5"/>
+      </g>
+      <g id="text_39">
+        <text class="st11" transform="translate(424.74 240.17)"><tspan x="0" y="0">Prop. polar atoms</tspan></text>
+      </g>
+    </g>
+  </g>
+  <g id="LineCollection_1">
+    <g class="st82">
+      <path class="st30" d="M736.08,53.05h60.23"/>
+    </g>
+  </g>
+  <g id="line2d_51">
+    <g class="st55">
+      <path id="m7b4c65a3cf" class="st29" d="M736.08,56.05v-6"/>
+    </g>
+  </g>
+  <g id="line2d_52">
+    <g class="st76">
+      <path id="m7b4c65a3cf1" data-name="m7b4c65a3cf" class="st29" d="M796.31,56.05v-6"/>
+    </g>
+  </g>
+  <g id="LineCollection_2">
+    <g class="st64">
+      <path class="st30" d="M684.11,72.21h59.67"/>
+    </g>
+  </g>
+  <g id="line2d_53">
+    <g class="st24">
+      <path id="m7b4c65a3cf2" data-name="m7b4c65a3cf" class="st29" d="M684.11,75.21v-6"/>
+    </g>
+  </g>
+  <g id="line2d_54">
+    <g class="st59">
+      <path id="m7b4c65a3cf3" data-name="m7b4c65a3cf" class="st29" d="M743.78,75.21v-6"/>
+    </g>
+  </g>
+  <g id="LineCollection_3">
+    <g class="st4">
+      <path class="st30" d="M688.79,91.36h59.71"/>
+    </g>
+  </g>
+  <g id="line2d_55">
+    <g class="st5">
+      <path id="m7b4c65a3cf4" data-name="m7b4c65a3cf" class="st29" d="M688.79,94.36v-6"/>
+    </g>
+  </g>
+  <g id="line2d_56">
+    <g class="st61">
+      <path id="m7b4c65a3cf5" data-name="m7b4c65a3cf" class="st29" d="M748.5,94.36v-6"/>
+    </g>
+  </g>
+  <g id="LineCollection_4">
+    <g class="st43">
+      <path class="st30" d="M683.81,110.52h59.67"/>
+    </g>
+  </g>
+  <g id="line2d_57">
+    <g class="st45">
+      <path id="m7b4c65a3cf6" data-name="m7b4c65a3cf" class="st29" d="M683.81,113.52v-6"/>
+    </g>
+  </g>
+  <g id="line2d_58">
+    <g class="st50">
+      <path id="m7b4c65a3cf7" data-name="m7b4c65a3cf" class="st29" d="M743.48,113.52v-6"/>
+    </g>
+  </g>
+  <g id="LineCollection_5">
+    <g class="st66">
+      <path class="st30" d="M665.63,129.67h59.55"/>
+    </g>
+  </g>
+  <g id="line2d_59">
+    <g class="st80">
+      <path id="m7b4c65a3cf8" data-name="m7b4c65a3cf" class="st29" d="M665.63,132.67v-6"/>
+    </g>
+  </g>
+  <g id="line2d_60">
+    <g class="st68">
+      <path id="m7b4c65a3cf9" data-name="m7b4c65a3cf" class="st29" d="M725.17,132.67v-6"/>
+    </g>
+  </g>
+  <g id="LineCollection_6">
+    <g class="st20">
+      <path class="st31" d="M635.29,179.48h59.42"/>
+    </g>
+  </g>
+  <g id="line2d_61">
+    <g class="st75">
+      <path id="m6d71e91e58" class="st28" d="M635.29,182.48v-6"/>
+    </g>
+  </g>
+  <g id="line2d_62">
+    <g class="st6">
+      <path id="m6d71e91e581" data-name="m6d71e91e58" class="st28" d="M694.71,182.48v-6"/>
+    </g>
+  </g>
+  <g id="LineCollection_7">
+    <g class="st22">
+      <path class="st31" d="M625.77,198.63h59.41"/>
+    </g>
+  </g>
+  <g id="line2d_63">
+    <g class="st70">
+      <path id="m6d71e91e582" data-name="m6d71e91e58" class="st28" d="M625.77,201.63v-6"/>
+    </g>
+  </g>
+  <g id="line2d_64">
+    <g class="st60">
+      <path id="m6d71e91e583" data-name="m6d71e91e58" class="st28" d="M685.18,201.63v-6"/>
+    </g>
+  </g>
+  <g id="LineCollection_8">
+    <g class="st3">
+      <path class="st31" d="M609.83,217.79h59.4"/>
+    </g>
+  </g>
+  <g id="line2d_65">
+    <g class="st33">
+      <path id="m6d71e91e584" data-name="m6d71e91e58" class="st28" d="M609.83,220.79v-6"/>
+    </g>
+  </g>
+  <g id="line2d_66">
+    <g class="st34">
+      <path id="m6d71e91e585" data-name="m6d71e91e58" class="st28" d="M669.23,220.79v-6"/>
+    </g>
+  </g>
+  <g id="LineCollection_9">
+    <g class="st81">
+      <path class="st31" d="M615.25,236.94h59.4"/>
+    </g>
+  </g>
+  <g id="line2d_67">
+    <g class="st48">
+      <path id="m6d71e91e586" data-name="m6d71e91e58" class="st28" d="M615.25,239.94v-6"/>
+    </g>
+  </g>
+  <g id="line2d_68">
+    <g class="st65">
+      <path id="m6d71e91e587" data-name="m6d71e91e58" class="st28" d="M674.65,239.94v-6"/>
+    </g>
+  </g>
+  <g id="patch_6">
+    <path class="st25" d="M542.13,248.44V24.32"/>
+  </g>
+  <g id="patch_7">
+    <path class="st25" d="M542.13,248.44h292.61"/>
+  </g>
+  <g id="PathCollection_6">
+    <path id="maff443b69e" class="st35" d="M766.2,56.76c.98,0,1.93-.39,2.62-1.09.7-.7,1.09-1.64,1.09-2.62s-.39-1.93-1.09-2.62c-.7-.7-1.64-1.09-2.62-1.09s-1.93.39-2.62,1.09c-.7.7-1.09,1.64-1.09,2.62s.39,1.93,1.09,2.62c.7.7,1.64,1.09,2.62,1.09Z"/>
+  </g>
+  <g id="text_40">
+    <text class="st16" transform="translate(807.42 56.36)"><tspan x="0" y="0">*</tspan></text>
+  </g>
+  <g id="PathCollection_7">
+    <path id="maff443b69e1" data-name="maff443b69e" class="st35" d="M713.94,75.91c.98,0,1.93-.39,2.62-1.09.7-.7,1.09-1.64,1.09-2.62s-.39-1.93-1.09-2.62c-.7-.7-1.64-1.09-2.62-1.09s-1.93.39-2.62,1.09c-.7.7-1.09,1.64-1.09,2.62s.39,1.93,1.09,2.62c.7.7,1.64,1.09,2.62,1.09Z"/>
+  </g>
+  <g id="text_41">
+    <text class="st16" transform="translate(754.88 75.52)"><tspan x="0" y="0">*</tspan></text>
+  </g>
+  <g id="PathCollection_8">
+    <path id="maff443b69e2" data-name="maff443b69e" class="st35" d="M718.64,95.07c.98,0,1.93-.39,2.62-1.09.7-.7,1.09-1.64,1.09-2.62s-.39-1.93-1.09-2.62c-.7-.7-1.64-1.09-2.62-1.09s-1.93.39-2.62,1.09c-.7.7-1.09,1.64-1.09,2.62s.39,1.93,1.09,2.62c.7.7,1.64,1.09,2.62,1.09Z"/>
+  </g>
+  <g id="text_42">
+    <text class="st16" transform="translate(759.6 94.67)"><tspan x="0" y="0">*</tspan></text>
+  </g>
+  <g id="PathCollection_9">
+    <path id="maff443b69e3" data-name="maff443b69e" class="st35" d="M713.64,114.23c.98,0,1.93-.39,2.62-1.09.7-.7,1.09-1.64,1.09-2.62s-.39-1.93-1.09-2.62c-.7-.7-1.64-1.09-2.62-1.09s-1.93.39-2.62,1.09c-.7.7-1.09,1.64-1.09,2.62s.39,1.93,1.09,2.62c.7.7,1.64,1.09,2.62,1.09Z"/>
+  </g>
+  <g id="text_43">
+    <text class="st16" transform="translate(754.58 113.83)"><tspan x="0" y="0">*</tspan></text>
+  </g>
+  <g id="PathCollection_10">
+    <path id="maff443b69e4" data-name="maff443b69e" class="st35" d="M695.4,133.38c.98,0,1.93-.39,2.62-1.09.7-.7,1.09-1.64,1.09-2.62s-.39-1.93-1.09-2.62c-.7-.7-1.64-1.09-2.62-1.09s-1.93.39-2.62,1.09c-.7.7-1.09,1.64-1.09,2.62s.39,1.93,1.09,2.62c.7.7,1.64,1.09,2.62,1.09Z"/>
+  </g>
+  <g id="PathCollection_11">
+    <path id="me6fbc1498b" class="st41" d="M665,183.19c.98,0,1.93-.39,2.62-1.09.7-.7,1.09-1.64,1.09-2.62s-.39-1.93-1.09-2.62c-.7-.7-1.64-1.09-2.62-1.09s-1.93.39-2.62,1.09c-.7.7-1.09,1.64-1.09,2.62s.39,1.93,1.09,2.62c.7.7,1.64,1.09,2.62,1.09Z"/>
+  </g>
+  <g id="PathCollection_12">
+    <path id="me6fbc1498b1" data-name="me6fbc1498b" class="st41" d="M655.48,202.34c.98,0,1.93-.39,2.62-1.09.7-.7,1.09-1.64,1.09-2.62s-.39-1.93-1.09-2.62c-.7-.7-1.64-1.09-2.62-1.09s-1.93.39-2.62,1.09c-.7.7-1.09,1.64-1.09,2.62s.39,1.93,1.09,2.62c.7.7,1.64,1.09,2.62,1.09Z"/>
+  </g>
+  <g id="PathCollection_13">
+    <path id="me6fbc1498b2" data-name="me6fbc1498b" class="st41" d="M639.53,221.5c.98,0,1.93-.39,2.62-1.09.7-.7,1.09-1.64,1.09-2.62s-.39-1.93-1.09-2.62c-.7-.7-1.64-1.09-2.62-1.09s-1.93.39-2.62,1.09c-.7.7-1.09,1.64-1.09,2.62s.39,1.93,1.09,2.62c.7.7,1.64,1.09,2.62,1.09Z"/>
+  </g>
+  <g id="PathCollection_14">
+    <path id="me6fbc1498b3" data-name="me6fbc1498b" class="st41" d="M644.95,240.65c.98,0,1.93-.39,2.62-1.09.7-.7,1.09-1.64,1.09-2.62s-.39-1.93-1.09-2.62c-.7-.7-1.64-1.09-2.62-1.09s-1.93.39-2.62,1.09c-.7.7-1.09,1.64-1.09,2.62s.39,1.93,1.09,2.62c.7.7,1.64,1.09,2.62,1.09Z"/>
+  </g>
+  <g id="text_44">
+    <text class="st12" transform="translate(537.56 16.32)"><tspan x="0" y="0">B</tspan></text>
+  </g>
+  <g id="legend_1">
+    <g id="text_45">
+      <text class="st10" transform="translate(714.43 216.09)"><tspan x="0" y="0">* BH q &lt; 0.05</tspan></text>
+    </g>
+    <g id="patch_8">
+      <path class="st32" d="M707.66,227.83h16v-5.6h-16v5.6Z"/>
+    </g>
+    <g id="text_46">
+      <text class="st10" transform="translate(683.17 227.83)"><tspan x="0" y="0">Geometry / druggability</tspan></text>
+    </g>
+    <g id="patch_9">
+      <path class="st32" d="M707.66,239.57h16v-5.6h-16v5.6Z"/>
+    </g>
+    <g id="text_47">
+      <text class="st10" transform="translate(681.41 239.57)"><tspan x="0" y="0">Chemistry / composition</tspan></text>
+    </g>
+  </g>
+  <g id="line2d_72">
+    <path id="m6b6818ea3910" data-name="m6b6818ea39" class="st27" d="M175.57,551v3.5"/>
+  </g>
+  <g id="text_49">
+    <text class="st18" transform="translate(165.66 565.6)"><tspan class="st72" x="0" y="0">−</tspan><tspan class="st44" x="5.96" y="0">0.2</tspan></text>
+  </g>
+  <g id="line2d_74">
+    <path id="m6b6818ea3911" data-name="m6b6818ea39" class="st27" d="M213.91,551v3.5"/>
+  </g>
+  <g id="text_50">
+    <text class="st13" transform="translate(206.5 565.6)"><tspan x="0" y="0">0.0</tspan></text>
+  </g>
+  <g id="line2d_76">
+    <path id="m6b6818ea3912" data-name="m6b6818ea39" class="st27" d="M252.24,551v3.5"/>
+  </g>
+  <g id="text_51">
+    <text class="st13" transform="translate(244.83 565.6)"><tspan x="0" y="0">0.2</tspan></text>
+  </g>
+  <g id="line2d_78">
+    <path id="m6b6818ea3913" data-name="m6b6818ea39" class="st27" d="M290.58,551v3.5"/>
+  </g>
+  <g id="text_52">
+    <text class="st13" transform="translate(283.17 565.6)"><tspan x="0" y="0">0.4</tspan></text>
+  </g>
+  <g id="line2d_80">
+    <path id="m6b6818ea3914" data-name="m6b6818ea39" class="st27" d="M328.91,551v3.5"/>
+  </g>
+  <g id="text_53">
+    <text class="st13" transform="translate(321.51 565.6)"><tspan x="0" y="0">0.6</tspan></text>
+  </g>
+  <g id="line2d_82">
+    <path id="m6b6818ea3915" data-name="m6b6818ea39" class="st27" d="M367.25,551v3.5"/>
+  </g>
+  <g id="text_54">
+    <text class="st13" transform="translate(359.84 565.6)"><tspan x="0" y="0">0.8</tspan></text>
+  </g>
+  <g id="text_55">
+    <text class="st9" transform="translate(155.55 578.51)"><tspan class="st44" x="0" y="0">Cohen&apos;s d (all top-1 </tspan><tspan class="st72" x="87.76" y="0">−</tspan><tspan class="st44" x="93.12" y="0" xml:space="preserve"> CovSite-rediscovered target)</tspan></text>
+  </g>
+  <g id="matplotlib.axis_6">
+    <g id="ytick_20">
+      <g id="line2d_83">
+        <path id="m4ad942e52c19" data-name="m4ad942e52c" class="st27" d="M137.24,336.46h-3.5"/>
+      </g>
+      <g id="text_56">
+        <text class="st8" transform="translate(7.24 339.88)"><tspan x="0" y="0">Geometry / druggability</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_21">
+      <g id="line2d_84">
+        <path id="m4ad942e52c20" data-name="m4ad942e52c" class="st27" d="M137.24,355.61h-3.5"/>
+      </g>
+      <g id="text_57">
+        <text class="st11" transform="translate(74.42 358.84)"><tspan x="0" y="0">fpocket score</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_22">
+      <g id="line2d_85">
+        <path id="m4ad942e52c21" data-name="m4ad942e52c" class="st27" d="M137.24,374.77h-3.5"/>
+      </g>
+      <g id="text_58">
+        <text class="st11" transform="translate(54.62 378)"><tspan x="0" y="0">Druggability score</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_23">
+      <g id="line2d_86">
+        <path id="m4ad942e52c22" data-name="m4ad942e52c" class="st27" d="M137.24,393.92h-3.5"/>
+      </g>
+      <g id="text_59">
+        <text class="st11" transform="translate(63.64 397.15)"><tspan x="0" y="0">N alpha-spheres</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_24">
+      <g id="line2d_87">
+        <path id="m4ad942e52c23" data-name="m4ad942e52c" class="st27" d="M137.24,413.08h-3.5"/>
+      </g>
+      <g id="text_60">
+        <text class="st11" transform="translate(98.6 416.31)"><tspan x="0" y="0">Volume</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_25">
+      <g id="line2d_88">
+        <path id="m4ad942e52c24" data-name="m4ad942e52c" class="st27" d="M137.24,432.23h-3.5"/>
+      </g>
+      <g id="text_61">
+        <text class="st11" transform="translate(84.43 435.46)"><tspan x="0" y="0">Total SASA</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_26">
+      <g id="line2d_89">
+        <path id="m4ad942e52c25" data-name="m4ad942e52c" class="st27" d="M137.24,462.88h-3.5"/>
+      </g>
+      <g id="text_62">
+        <text class="st8" transform="translate(4.96 466.3)"><tspan x="0" y="0">Chemistry / composition</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_27">
+      <g id="line2d_90">
+        <path id="m4ad942e52c26" data-name="m4ad942e52c" class="st27" d="M137.24,482.04h-3.5"/>
+      </g>
+      <g id="text_63">
+        <text class="st11" transform="translate(41.42 485.27)"><tspan x="0" y="0">Hydrophobicity score</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_28">
+      <g id="line2d_91">
+        <path id="m4ad942e52c27" data-name="m4ad942e52c" class="st27" d="M137.24,501.19h-3.5"/>
+      </g>
+      <g id="text_64">
+        <text class="st11" transform="translate(76.69 504.42)"><tspan x="0" y="0">Charge score</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_29">
+      <g id="line2d_92">
+        <path id="m4ad942e52c28" data-name="m4ad942e52c" class="st27" d="M137.24,520.35h-3.5"/>
+      </g>
+      <g id="text_65">
+        <text class="st11" transform="translate(89.97 523.58)"><tspan x="0" y="0">Flexibility</tspan></text>
+      </g>
+    </g>
+    <g id="ytick_30">
+      <g id="line2d_93">
+        <path id="m4ad942e52c29" data-name="m4ad942e52c" class="st27" d="M137.24,539.5h-3.5"/>
+      </g>
+      <g id="text_66">
+        <text class="st11" transform="translate(56.65 542.73)"><tspan x="0" y="0">Prop. polar atoms</tspan></text>
+      </g>
+    </g>
+  </g>
+  <g id="LineCollection_10">
+    <g class="st49">
+      <path class="st30" d="M307.49,355.61h55.44"/>
+    </g>
+  </g>
+  <g id="line2d_94">
+    <g class="st54">
+      <path id="m7b4c65a3cf10" data-name="m7b4c65a3cf" class="st29" d="M307.49,358.61v-6"/>
+    </g>
+  </g>
+  <g id="line2d_95">
+    <g class="st77">
+      <path id="m7b4c65a3cf11" data-name="m7b4c65a3cf" class="st29" d="M362.93,358.61v-6"/>
+    </g>
+  </g>
+  <g id="LineCollection_11">
+    <g class="st69">
+      <path class="st30" d="M243.94,374.77h54.53"/>
+    </g>
+  </g>
+  <g id="line2d_96">
+    <g class="st7">
+      <path id="m7b4c65a3cf12" data-name="m7b4c65a3cf" class="st29" d="M243.94,377.77v-6"/>
+    </g>
+  </g>
+  <g id="line2d_97">
+    <g class="st71">
+      <path id="m7b4c65a3cf13" data-name="m7b4c65a3cf" class="st29" d="M298.47,377.77v-6"/>
+    </g>
+  </g>
+  <g id="LineCollection_12">
+    <g class="st21">
+      <path class="st30" d="M249.5,393.92h54.58"/>
+    </g>
+  </g>
+  <g id="line2d_98">
+    <g class="st1">
+      <path id="m7b4c65a3cf14" data-name="m7b4c65a3cf" class="st29" d="M249.5,396.92v-6"/>
+    </g>
+  </g>
+  <g id="line2d_99">
+    <g class="st52">
+      <path id="m7b4c65a3cf15" data-name="m7b4c65a3cf" class="st29" d="M304.08,396.92v-6"/>
+    </g>
+  </g>
+  <g id="LineCollection_13">
+    <g class="st51">
+      <path class="st30" d="M245.42,413.08h54.54"/>
+    </g>
+  </g>
+  <g id="line2d_100">
+    <g class="st79">
+      <path id="m7b4c65a3cf16" data-name="m7b4c65a3cf" class="st29" d="M245.42,416.08v-6"/>
+    </g>
+  </g>
+  <g id="line2d_101">
+    <g class="st2">
+      <path id="m7b4c65a3cf17" data-name="m7b4c65a3cf" class="st29" d="M299.96,416.08v-6"/>
+    </g>
+  </g>
+  <g id="LineCollection_14">
+    <g class="st74">
+      <path class="st30" d="M231.49,432.23h54.42"/>
+    </g>
+  </g>
+  <g id="line2d_102">
+    <g class="st58">
+      <path id="m7b4c65a3cf18" data-name="m7b4c65a3cf" class="st29" d="M231.49,435.23v-6"/>
+    </g>
+  </g>
+  <g id="line2d_103">
+    <g class="st63">
+      <path id="m7b4c65a3cf19" data-name="m7b4c65a3cf" class="st29" d="M285.91,435.23v-6"/>
+    </g>
+  </g>
+  <g id="LineCollection_15">
+    <g class="st46">
+      <path class="st31" d="M199.7,482.04h54.28"/>
+    </g>
+  </g>
+  <g id="line2d_104">
+    <g class="st47">
+      <path id="m6d71e91e588" data-name="m6d71e91e58" class="st28" d="M199.7,485.04v-6"/>
+    </g>
+  </g>
+  <g id="line2d_105">
+    <g class="st83">
+      <path id="m6d71e91e589" data-name="m6d71e91e58" class="st28" d="M253.98,485.04v-6"/>
+    </g>
+  </g>
+  <g id="LineCollection_16">
+    <g class="st56">
+      <path class="st31" d="M178.54,501.19h54.27"/>
+    </g>
+  </g>
+  <g id="line2d_106">
+    <g class="st57">
+      <path id="m6d71e91e5810" data-name="m6d71e91e58" class="st39" d="M178.54,504.19v-6"/>
+    </g>
+  </g>
+  <g id="line2d_107">
+    <g class="st23">
+      <path id="m6d71e91e5811" data-name="m6d71e91e58" class="st28" d="M232.81,504.19v-6"/>
+    </g>
+  </g>
+  <g id="LineCollection_17">
+    <g class="st53">
+      <path class="st31" d="M211.43,520.35h54.31"/>
+    </g>
+  </g>
+  <g id="line2d_108">
+    <g class="st78">
+      <path id="m6d71e91e5812" data-name="m6d71e91e58" class="st28" d="M211.43,523.35v-6"/>
+    </g>
+  </g>
+  <g id="line2d_109">
+    <g class="st67">
+      <path id="m6d71e91e5813" data-name="m6d71e91e58" class="st28" d="M265.74,523.35v-6"/>
+    </g>
+  </g>
+  <g id="LineCollection_18">
+    <g class="st0">
+      <path class="st31" d="M172.35,539.5h54.28"/>
+    </g>
+  </g>
+  <g id="line2d_110">
+    <g class="st62">
+      <path id="m6d71e91e5814" data-name="m6d71e91e58" class="st39" d="M172.35,542.5v-6"/>
+    </g>
+  </g>
+  <g id="line2d_111">
+    <g class="st73">
+      <path id="m6d71e91e5815" data-name="m6d71e91e58" class="st28" d="M226.62,542.5v-6"/>
+    </g>
+  </g>
+  <g id="patch_11">
+    <path class="st25" d="M137.24,551v-224.12"/>
+  </g>
+  <g id="patch_12">
+    <path class="st25" d="M137.24,551h254.45"/>
+  </g>
+  <path id="maff443b69e5" data-name="maff443b69e" class="st42" d="M335.21,359.32c.98,0,1.93-.39,2.62-1.09.7-.7,1.09-1.64,1.09-2.62s-.39-1.93-1.09-2.62c-.7-.7-1.64-1.09-2.62-1.09s-1.93.39-2.62,1.09c-.7.7-1.09,1.64-1.09,2.62s.39,1.93,1.09,2.62c.7.7,1.64,1.09,2.62,1.09Z"/>
+  <g id="text_67">
+    <text class="st16" transform="translate(374.43 358.92)"><tspan x="0" y="0">*</tspan></text>
+  </g>
+  <g id="text_68">
+    <text class="st16" transform="translate(309.97 378.08)"><tspan x="0" y="0">*</tspan></text>
+  </g>
+  <g id="text_69">
+    <text class="st16" transform="translate(315.58 397.23)"><tspan x="0" y="0">*</tspan></text>
+  </g>
+  <g id="text_70">
+    <text class="st16" transform="translate(311.46 416.39)"><tspan x="0" y="0">*</tspan></text>
+  </g>
+  <g id="text_71">
+    <text class="st16" transform="translate(297.41 435.55)"><tspan x="0" y="0">*</tspan></text>
+  </g>
+  <g id="text_72">
+    <text class="st19" transform="translate(277.25 523.66)"><tspan x="0" y="0">*</tspan></text>
+  </g>
+  <g id="text_73">
+    <text class="st12" transform="translate(137.24 318.88)"><tspan x="0" y="0">C</tspan></text>
+  </g>
+</svg>

@@ -1,0 +1,6 @@
+Mean per-query ROC-AUC: 0.9697 (96.97%)
+Queries included in mean ROC-AUC: 741
+LogAUC (FPR 0.001-1): 90.95%
+Random baseline: 14.462%
+Adjusted logAUC: 76.49% (0% = random, 85.5% = perfect)
+Pooled retained-fraction AUC: 0.9696

@@ -92,6 +92,83 @@ def make_label_key(name, residue, resnum, chain) -> tuple[str, str, str, str]:
     )
 
 
+SMILES_COL = "electrophile_smiles"
+
+
+def build_name_smiles_map(df: pd.DataFrame) -> dict[str, str]:
+    """
+    Map ligand base Name (upper) -> input electrophile SMILES.
+
+    CovSite Names sanitize the SMILES (brackets, bonds and stereo all collapse
+    to '_'), so reports carry the original string alongside the Name.
+    """
+    name_col = "_base_name" if "_base_name" in df.columns else "_name_upper"
+    if SMILES_COL not in df.columns or name_col not in df.columns:
+        return {}
+
+    out: dict[str, str] = {}
+    for name, smiles in zip(df[name_col], df[SMILES_COL]):
+        key = str(name).strip().upper()
+        if not key or key in out or pd.isna(smiles):
+            continue
+        text = str(smiles).strip()
+        if text:
+            out[key] = text
+    return out
+
+
+def load_labels_smiles_map(labels_csv: str | None) -> dict[str, str]:
+    """
+    Fallback Name -> SMILES map from the labels CSV.
+
+    Candidate CSVs written before electrophile_smiles was carried through do
+    not have the column, but the labels CSV always does.
+    """
+    if not labels_csv:
+        return {}
+    try:
+        labels = pd.read_csv(labels_csv, sep=",", engine="c", low_memory=False)
+    except (OSError, ValueError, pd.errors.ParserError):
+        return {}
+    if "Name" not in labels.columns or SMILES_COL not in labels.columns:
+        return {}
+
+    out: dict[str, str] = {}
+    for name, smiles in zip(labels["Name"], labels[SMILES_COL]):
+        key = ligand_base_name(name).upper()
+        if not key or key in out or pd.isna(smiles):
+            continue
+        text = str(smiles).strip()
+        if text:
+            out[key] = text
+    return out
+
+
+def attach_electrophile_smiles(
+    frame: pd.DataFrame,
+    name_smiles: dict[str, str],
+    name_col: str = "Name",
+) -> pd.DataFrame:
+    """Insert electrophile_smiles immediately after the ligand name column."""
+    if frame.empty or not name_smiles or name_col not in frame.columns:
+        return frame
+    if SMILES_COL in frame.columns:
+        return frame
+
+    def lookup(value) -> str:
+        # Names may still carry the CovSite warhead suffix (score-only mode).
+        key = str(value).strip().upper()
+        if key in name_smiles:
+            return name_smiles[key]
+        return name_smiles.get(ligand_base_name(value).upper(), "")
+
+    out = frame.copy()
+    out.insert(
+        out.columns.get_loc(name_col) + 1, SMILES_COL, out[name_col].map(lookup)
+    )
+    return out
+
+
 def vs_site_column(residue: str, resnum, chain: str) -> str:
     """Column key for a residue site, e.g. cys797A."""
     return (
@@ -838,8 +915,13 @@ def build_label_warhead_counts(labels_csv: str) -> dict[tuple[str, str, str, str
 def enrich_query_group_eval(
     eval_df: pd.DataFrame,
     merged: pd.DataFrame,
+    labels_csv: str | None = None,
 ) -> pd.DataFrame:
-    """Attach label site + warhead metadata to per-query-group metrics."""
+    """Attach label site + warhead metadata to per-query-group metrics.
+
+    labels_csv is an optional fallback source for electrophile_smiles when the
+    candidate CSV predates that column.
+    """
     name_col = "_base_name" if "_base_name" in merged.columns else "_name_upper"
     if {"tgt_residue", "tgt_resnum", "tgt_chain"}.issubset(merged.columns):
         meta = (
@@ -869,7 +951,9 @@ def enrich_query_group_eval(
             .reset_index()
         )
     meta["Name"] = meta["Name"].map(lambda value: ligand_base_name(value).upper())
-    return eval_df.merge(meta, on="query_group", how="left")
+    out = eval_df.merge(meta, on="query_group", how="left")
+    name_smiles = build_name_smiles_map(merged) or load_labels_smiles_map(labels_csv)
+    return attach_electrophile_smiles(out, name_smiles)
 
 
 def aggregate_label_eval_rows(
@@ -932,6 +1016,11 @@ def aggregate_label_eval_rows(
 
         rows_out.append({
             "Name":                   key[0],
+            SMILES_COL:               (
+                str(grp[SMILES_COL].iloc[0])
+                if SMILES_COL in grp.columns and pd.notna(grp[SMILES_COL].iloc[0])
+                else ""
+            ),
             "Residue":                key[1],
             "ResNum":                 key[2],
             "Chain":                  key[3],
@@ -961,7 +1050,10 @@ def aggregate_label_eval_rows(
             f"--perfect-match was enabled."
         )
 
-    return pd.DataFrame(rows_out)
+    out = pd.DataFrame(rows_out)
+    if SMILES_COL in out.columns and not out[SMILES_COL].astype(bool).any():
+        out = out.drop(columns=[SMILES_COL])
+    return out
 
 
 def per_residue_screen_breakdown(
@@ -1400,7 +1492,7 @@ def predict_scores(
 def export_scores_csv(df: pd.DataFrame, path: str) -> None:
     cols = [
         c for c in [
-            "Name", "Residue", "ResNum", "Chain", "Warhead",
+            "Name", SMILES_COL, "Residue", "ResNum", "Chain", "Warhead",
             "query_group", "relevance", "pred_score", "candidate_rank",
             "candidate_count", "rank_frac",
         ]
@@ -1701,6 +1793,9 @@ def main() -> None:
                 chain=args.chain,
                 resnum=args.resnum,
             )
+        name_smiles = build_name_smiles_map(merged) or load_labels_smiles_map(args.labels)
+        vs_wide_df = attach_electrophile_smiles(vs_wide_df, name_smiles)
+        vs_long_df = attach_electrophile_smiles(vs_long_df, name_smiles)
         if vs_wide_df.empty:
             print("[WARN] VS ranking produced no rows — check --residue/--chain/--resnum.")
     elif score_only_mode:
@@ -1721,7 +1816,7 @@ def main() -> None:
         if eval_qg_df.empty:
             sys.exit("[ERROR] No query groups could be evaluated.")
 
-        eval_qg_df = enrich_query_group_eval(eval_qg_df, merged)
+        eval_qg_df = enrich_query_group_eval(eval_qg_df, merged, args.labels)
         eval_label_df = aggregate_label_eval_rows(
             eval_qg_df,
             args.perfect_match,
@@ -1890,6 +1985,9 @@ def main() -> None:
                     top_pred_score=("pred_score", "max"),
                 )
             )
+            group_summary = attach_electrophile_smiles(
+                group_summary, build_name_smiles_map(merged)
+            )
             group_summary.to_csv(args.export_query_groups, index=False)
             print(f"[INFO] Per-query-group rankings exported → {args.export_query_groups}")
         else:
@@ -1906,7 +2004,10 @@ def main() -> None:
     if args.export_scores:
         if vs_mode:
             print("[INFO] Exporting scores (--export-scores) in --VS mode.")
-        export_scores_csv(merged, args.export_scores)
+        export_scores_csv(
+            attach_electrophile_smiles(merged, load_labels_smiles_map(args.labels)),
+            args.export_scores,
+        )
 
     if args.export_summary:
         export_results_json(summary, args.export_summary)

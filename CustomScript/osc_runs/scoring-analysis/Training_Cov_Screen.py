@@ -2220,7 +2220,7 @@ def export_screen_eval_csvs(
 
     os.makedirs(output_dir, exist_ok=True)
     label_wh_counts = build_label_warhead_counts(labels_csv)
-    eval_qg_df = enrich_query_group_eval(test_eval_df, scored_test_df)
+    eval_qg_df = enrich_query_group_eval(test_eval_df, scored_test_df, labels_csv)
     eval_label_df = aggregate_label_eval_rows(
         eval_qg_df, perfect_match=perfect_match, label_wh_counts=label_wh_counts,
     )

@@ -865,6 +865,17 @@ def decide_calibration(
     return False, f"auto_ece_le_{ece_threshold:g}"
 
 
+def cv_tree_count(fold_df: pd.DataFrame) -> int | None:
+    """Median early-stopped tree count across CV folds (None if unavailable)."""
+    if fold_df is None or "best_iteration" not in fold_df.columns:
+        return None
+    its = fold_df["best_iteration"].astype(float)
+    its = its[its > 0]
+    if its.empty:
+        return None
+    return int(round(float(np.median(its))))
+
+
 def fit_final_classifier(
     train_df: pd.DataFrame,
     feature_cols: list[str],
@@ -872,10 +883,14 @@ def fit_final_classifier(
     apply_calibration: bool,
     calib_fraction: float,
     random_state: int,
+    n_estimators: int | None = None,
 ) -> tuple[object, dict]:
     """
     Final refit on train. If calibrating: hold out calib_fraction of clusters,
     train base on remainder, isotonic CalibratedClassifierCV(cv='prefit').
+
+    If n_estimators is given (uncalibrated path only), the tree count is taken
+    from CV instead of early-stopping on a small held-out slice of clusters.
     """
     print("\n[5c/8] Final model refit on training set...")
     X_all = train_df[feature_cols].values
@@ -897,6 +912,22 @@ def fit_final_classifier(
         "scale_pos_weight": None,
         "max_depth": max_depth,
     }
+
+    if not apply_calibration and n_estimators is not None:
+        # Reuse the CV-derived tree count: no inner early-stopping split.
+        params = get_lgbm_classifier_params(max_depth)
+        params["n_estimators"] = int(n_estimators)
+        model = lgb.LGBMClassifier(**params)
+        model.fit(X_all, y_all)
+        calib_meta["reason"] = "no_calibration"
+        calib_meta["best_iteration"] = int(n_estimators)
+        calib_meta["n_estimators_source"] = "cv_median_best_iteration"
+        print(
+            f"  Final LGBMClassifier (uncalibrated), "
+            f"is_unbalance=True, n_estimators={int(n_estimators)} "
+            f"(median best_iteration across CV folds)"
+        )
+        return model, calib_meta
 
     if not apply_calibration:
         rng = np.random.RandomState(random_state)
@@ -2249,6 +2280,7 @@ def main_covsite_ligand(args: argparse.Namespace) -> None:
         apply_calibration=apply_cal,
         calib_fraction=args.calib_fraction,
         random_state=args.random_state,
+        n_estimators=cv_tree_count(cv_folds_df),
     )
     calib_meta["decision_reason"] = cal_reason
     if calib_meta.get("reason") == "no_calibration":
@@ -2660,6 +2692,7 @@ def main() -> None:
         apply_calibration=apply_cal,
         calib_fraction=args.calib_fraction,
         random_state=args.random_state,
+        n_estimators=cv_tree_count(cv_folds_df),
     )
     calib_meta["decision_reason"] = cal_reason
     if calib_meta.get("reason") == "no_calibration":

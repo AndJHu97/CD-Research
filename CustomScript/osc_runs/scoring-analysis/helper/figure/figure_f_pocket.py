@@ -22,13 +22,17 @@ mark q < 0.05 on the curated geometry / chemistry subsets.
 Also writes companion stats CSVs next to the figure:
   <stem>_panel_a_stats.csv, <stem>_panel_b_stats.csv, <stem>_panel_c_stats.csv
 
-Usage (from scoring-analysis/ or helper/):
-    python helper/figure_f_pocket.py
-    python helper/figure_f_pocket.py \
+--blank strips all text and saves <output stem>_blank.png for relabeling in an
+editor.
+
+Usage (from scoring-analysis/):
+    python helper/figure/figure_f_pocket.py
+    python helper/figure/figure_f_pocket.py --blank
+    python helper/figure/figure_f_pocket.py \
         --summary fpocket_analysis/test_fpocket_summary.csv \
         --detail fpocket_analysis/test_fpocket_detail.csv \
         --output fpocket_analysis/fpocket_figure.png
-    python helper/figure_f_pocket.py \
+    python helper/figure/figure_f_pocket.py \
         --summary fpocket_analysis/test_fpocket_summary.csv \
         --detail fpocket_analysis/test_fpocket_detail.csv \
         --covsite-top1-hit-rate 0.85 \
@@ -43,6 +47,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from matplotlib.text import Text
 import numpy as np
 import pandas as pd
 
@@ -52,7 +57,8 @@ except ImportError:
     scipy_stats = None
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_ANALYSIS = HERE.parent / "fpocket_analysis"
+SCORING_DIR = HERE.parents[1]
+DEFAULT_ANALYSIS = SCORING_DIR / "fpocket_analysis"
 
 # Curated forest features.
 GEOMETRY_FEATURES = [
@@ -163,6 +169,29 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_ANALYSIS / "fpocket_figure.png",
     )
     p.add_argument("--dpi", type=int, default=300)
+    p.add_argument(
+        "--blank",
+        action="store_true",
+        help=(
+            "Remove all text (panel letters, axis labels, tick labels, point labels, "
+            "asterisks, legend) and save as <output stem>_blank. Stats CSVs are unchanged."
+        ),
+    )
+
+    p.add_argument(
+        "--no-lines",
+        action="store_true",
+        help=(
+            "With --blank: also hide gridlines, the zero reference lines, axis "
+            "spines, and tick marks, leaving only markers and error bars."
+        ),
+    )
+    p.add_argument(
+        "--svg",
+        action="store_true",
+        help="Also save an SVG next to the PNG (same stem, .svg).",
+    )
+
     args = p.parse_args()
     for name, val in (
         ("--covsite-top1-hit-rate", args.covsite_top1_hit_rate),
@@ -251,7 +280,7 @@ def _covsite_search_space_reduction(
     candidates: list[Path] = []
     if label_results is not None:
         candidates.append(label_results)
-    candidates.append(HERE.parent / "test_label_results.csv")
+    candidates.append(SCORING_DIR / "test_label_results.csv")
 
     for path in candidates:
         if not path.is_file():
@@ -662,7 +691,7 @@ def plot_forest(
             feature_rows.append((y, row))
             y += 1.0
 
-    ax.axvline(0.0, color="#bbbbbb", lw=1.0, zorder=0)
+        ax.axvline(0.0, color="#bbbbbb", lw=1.0, zorder=0, gid="ref-line")
 
     x_lo, x_hi = -0.4, 0.4
     for ypos, row in feature_rows:
@@ -734,6 +763,35 @@ def plot_forest(
     _panel_letter(ax, letter)
 
 
+def blank_figure(fig: plt.Figure, remove_lines: bool = False) -> None:
+    """Hide every text element, keeping markers, error bars, ticks, and gridlines.
+
+    Text is made fully transparent rather than removed so bbox_inches="tight"
+    crops identically to the labeled figure and the two overlay exactly.
+    With remove_lines=True, reference lines, gridlines, spines and tick marks
+    are also hidden.
+    """
+    for ax in fig.axes:
+        ax.tick_params(axis="both", which="both", labelcolor=(0, 0, 0, 0))
+        for text in ax.findobj(Text):
+            text.set_alpha(0)
+        legend = ax.get_legend()
+        if legend is not None:
+            for artist in legend.findobj():
+                if hasattr(artist, "set_alpha"):
+                    artist.set_alpha(0)
+        if remove_lines:
+            for line in ax.get_lines():
+                if line.get_gid() == "ref-line":
+                    line.set_visible(False)
+            ax.grid(False)
+            for spine in ax.spines.values():
+                spine.set_color((0, 0, 0, 0))
+            ax.tick_params(axis="both", which="both", length=0)
+    for text in fig.texts:
+        text.set_alpha(0)
+
+
 def _print_effects(tag: str, effects: pd.DataFrame, ns: dict[str, int]) -> None:
     print(f"\n{tag} (n_top1={ns['n_top1']}, n_comp={ns['n_comp']}):")
     show = effects[["group", "label", "cohens_d", "pvalue", "qvalue"]].copy()
@@ -744,6 +802,7 @@ def _print_effects(tag: str, effects: pd.DataFrame, ns: dict[str, int]) -> None:
 
 
 def main() -> None:
+    plt.rcParams["svg.fonttype"] = "none"
     args = parse_args()
     if scipy_stats is None:
         raise SystemExit("[ERROR] scipy is required (Mann-Whitney + forest panels)")
@@ -805,10 +864,18 @@ def main() -> None:
         show_legend=False,
     )
 
+    fig_path = args.output
+    if args.blank:
+        blank_figure(fig, remove_lines=args.no_lines)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(args.output, dpi=args.dpi, bbox_inches="tight", facecolor="white")
+    fig.savefig(fig_path, dpi=args.dpi, bbox_inches="tight", facecolor="white")
+    if args.svg:
+        svg_path = fig_path.with_suffix(".svg")
+        fig.savefig(svg_path, bbox_inches="tight", facecolor="white")
+        print(f"Wrote {svg_path}")
+    
     plt.close(fig)
-    print(f"\nWrote {args.output}")
+    print(f"\nWrote {fig_path}")
 
     for path in export_figure_stats(
         args.output.parent,
